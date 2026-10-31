@@ -61,6 +61,14 @@ struct MapView: UIViewRepresentable {
         }
         mapView.addGestureRecognizer(tap)
 
+        // Long press inspects the ground. MapLibre has no long-press of its
+        // own, so there is nothing to defer to here.
+        let press = UILongPressGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleLongPress(_:))
+        )
+        mapView.addGestureRecognizer(press)
+
         context.coordinator.model = model
         context.coordinator.mapView = mapView
         context.coordinator.route = route
@@ -147,6 +155,19 @@ struct MapView: UIViewRepresentable {
                 latitude: location.latitude
             )
             Task { await model.addWaypoint(coordinate) }
+        }
+
+        @objc func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+            // .began only: the recogniser keeps firing as the finger moves,
+            // and each repeat would start another fan-out of five providers.
+            guard gesture.state == .began, let mapView, let model else { return }
+            let point = gesture.location(in: mapView)
+            let location = mapView.convert(point, toCoordinateFrom: mapView)
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            Task {
+                await model.inspect(at: Coordinate(longitude: location.longitude,
+                                                   latitude: location.latitude))
+            }
         }
 
         // ---------- style lifecycle ----------

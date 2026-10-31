@@ -48,6 +48,20 @@ struct ContentView: View {
             }
             .animation(.snappy(duration: 0.28), value: model.profile.isEmpty)
         }
+        // The inspection card. Driven off the point rather than a separate
+        // flag, so there is one thing to clear when it closes.
+        .sheet(isPresented: Binding(
+            get: { model.inspectedPoint != nil },
+            set: { if !$0 { model.closeInspection() } }
+        )) {
+            if let point = model.inspectedPoint {
+                LocationCardView(point: point,
+                                 summary: model.inspection,
+                                 isLoading: model.isInspecting)
+                    .presentationDetents([.medium, .large])
+                    .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+            }
+        }
         .sheet(isPresented: $showDiscover) {
             DiscoverSheet(mapCenter: mapCenter)
                 .environment(model)

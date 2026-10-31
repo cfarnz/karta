@@ -74,6 +74,14 @@ final class AppModel {
 
     private let location = LocationProvider()
 
+    // ---------- inspection ----------
+    /// The point being inspected, or nil when the card is closed. Held
+    /// separately from the summary so the card can open immediately with
+    /// coordinates and fill in as providers answer.
+    private(set) var inspectedPoint: Coordinate?
+    private(set) var inspection: LocationSummary?
+    private(set) var isInspecting = false
+
     // ---------- provenance ----------
     private(set) var provenance: [ProvenanceRecord] = []
 
@@ -82,6 +90,7 @@ final class AppModel {
     private let elevation: ElevationService
     private let router: Router
     let discover: DiscoverService
+    private let summaries: LocationSummaryService
 
     init() {
         let http = URLSessionFetcher()
@@ -91,6 +100,7 @@ final class AppModel {
         self.elevation = elevation
         self.router = Router(http: http, elevation: elevation)
         self.discover = DiscoverService(http: http, cache: cache, elevation: elevation)
+        self.summaries = LocationSummaryService(http: http, cache: cache, elevation: elevation)
     }
 
     // ---------- editing ----------
@@ -291,6 +301,33 @@ final class AppModel {
         candidates = []
         previewedCandidate = nil
         discoverState = .idle
+    }
+
+    // ---------- inspection ----------
+
+    /// Long-press anywhere to read the ground there.
+    ///
+    /// The web app made this a mode: arm "Inspect a point", then click. A
+    /// long press needs no mode and cannot be left switched on by accident,
+    /// which matters when the plain tap adds a waypoint.
+    func inspect(at point: Coordinate) async {
+        inspectedPoint = point
+        inspection = nil
+        isInspecting = true
+        defer { isInspecting = false }
+
+        let result = await summaries.summary(for: point)
+
+        // A second long press while the first was in flight wins; dropping
+        // the stale answer stops the card flickering back to the old point.
+        guard inspectedPoint == point else { return }
+        inspection = result.summary
+        note(result.provenance)
+    }
+
+    func closeInspection() {
+        inspectedPoint = nil
+        inspection = nil
     }
 
     // ---------- housekeeping ----------

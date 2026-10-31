@@ -146,9 +146,12 @@ public enum SlopeMath {
     }
 
     /// ESRI's aspect convention: 0 is north, increasing clockwise.
-    public static func aspectSector(degrees: Double, dzdx: Double, dzdy: Double) -> Int? {
-        guard degrees >= aspectMinSlopeDegrees else { return nil }
-
+    ///
+    /// Shared with the location card, which runs the same Horn gradients over
+    /// a 3x3 grid of sampled elevations rather than a tile of pixels. One
+    /// implementation so the overlay and the card can never disagree about
+    /// which way a slope faces.
+    public static func aspectDegrees(dzdx: Double, dzdy: Double) -> Double {
         var a = atan2(dzdy, -dzdx) * 180 / .pi
         if a < 0 {
             a = 90 - a
@@ -157,8 +160,13 @@ public enum SlopeMath {
         } else {
             a = 90 - a
         }
-        let sector = Int((a.truncatingRemainder(dividingBy: 360) / 45).rounded()) % 8
-        return sector
+        return a
+    }
+
+    public static func aspectSector(degrees: Double, dzdx: Double, dzdy: Double) -> Int? {
+        guard degrees >= aspectMinSlopeDegrees else { return nil }
+        let a = aspectDegrees(dzdx: dzdx, dzdy: dzdy)
+        return Int((a.truncatingRemainder(dividingBy: 360) / 45).rounded()) % 8
     }
 
     public static func aspectColor(degrees: Double, dzdx: Double, dzdy: Double) -> RGB? {

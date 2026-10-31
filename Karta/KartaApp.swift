@@ -31,6 +31,7 @@ struct KartaApp: App {
 ///   -skipLocation    report no location fix, so Discover uses the map centre
 ///   -previewFirst    select the top result, drawing its preview on the map
 ///   -loadFirst       load the top result into the builder
+///   -inspectAt <lon,lat>  open the location card on a point
 ///
 /// They exist because the whole chain — BRouter, the elevation providers, the
 /// Terrarium tiles — is otherwise only reachable by tapping the screen, which
@@ -72,6 +73,15 @@ private func applyLaunchFlags(_ model: AppModel) async {
             await model.load(first)
         } else if arguments.contains("-previewFirst") {
             model.previewedCandidate = first
+        }
+    }
+
+    if let flag = arguments.firstIndex(of: "-inspectAt"),
+       arguments.index(after: flag) < arguments.endIndex {
+        let parts = arguments[arguments.index(after: flag)]
+            .split(separator: ",").compactMap { Double($0) }
+        if parts.count == 2 {
+            await model.inspect(at: Coordinate(longitude: parts[0], latitude: parts[1]))
         }
     }
 
