@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 — 31 October 2026
+
+First working build of the native iOS port. The app draws real routes on real
+trails, reads the ground under any point, and finds loops near you.
 
 ### Design
 
@@ -23,11 +26,6 @@
   press and made the Discover list hard to scan.
 - Difficulty badges moved onto the semantic colours instead of an invented
   scale, and press feedback is now on pointer-down rather than release.
-
-## 0.1.0 — 31 October 2026
-
-First working build of the native iOS port. The app draws real routes on real
-trails, reads the ground under any point, and finds loops near you.
 
 ### Route building
 
