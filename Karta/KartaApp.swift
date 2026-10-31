@@ -10,7 +10,9 @@ struct KartaApp: App {
             ContentView(
                 // Debug only; the real sheet is opened from the toolbar.
                 openDiscoverOnLaunch: ProcessInfo.processInfo.arguments
-                    .contains(where: { $0 == "-openDiscover" || $0 == "-runDiscover" })
+                    .contains(where: { $0 == "-openDiscover" || $0 == "-runDiscover" }),
+                openSourcesOnLaunch: ProcessInfo.processInfo.arguments
+                    .contains("-showSources")
             )
             .environment(model)
             .task { await applyLaunchFlags(model) }
@@ -34,6 +36,7 @@ struct KartaApp: App {
 ///   -inspectAt <lon,lat>  open the location card on a point
 ///   -dumpNames       print the discovered route names to stdout
 ///   -dumpTrailheads  print the trailheads found near Boulder, with names
+///   -showSources     open the data sources panel
 ///
 /// They exist because the whole chain — BRouter, the elevation providers, the
 /// Terrarium tiles — is otherwise only reachable by tapping the screen, which

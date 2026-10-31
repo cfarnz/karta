@@ -258,8 +258,7 @@ struct MapView: UIViewRepresentable {
             style.addLayer(casing)
 
             let line = MLNLineStyleLayer(identifier: Self.routeLayerID, source: source)
-            line.lineColor = NSExpression(forConstantValue: UIColor(red: 0.98, green: 0.45,
-                                                                    blue: 0.18, alpha: 1))
+            line.lineColor = NSExpression(forConstantValue: FieldUI.accent)
             line.lineWidth = NSExpression(forConstantValue: 4)
             line.lineCap = NSExpression(forConstantValue: "round")
             line.lineJoin = NSExpression(forConstantValue: "round")
@@ -278,8 +277,10 @@ struct MapView: UIViewRepresentable {
             style.addSource(source)
 
             let line = MLNLineStyleLayer(identifier: Self.previewLayerID, source: source)
+            // Info blue: a preview is not the route, and the difference has
+            // to read at a glance over a busy topo sheet.
             line.lineColor = NSExpression(
-                forConstantValue: UIColor(red: 0.16, green: 0.42, blue: 0.68, alpha: 0.9))
+                forConstantValue: FieldUI.info.withAlphaComponent(0.9))
             line.lineWidth = NSExpression(forConstantValue: 3)
             line.lineDashPattern = NSExpression(forConstantValue: [2, 1.5])
             line.lineCap = NSExpression(forConstantValue: "round")
@@ -337,8 +338,7 @@ struct MapView: UIViewRepresentable {
             dot.circleRadius = NSExpression(forConstantValue: 6)
             dot.circleColor = NSExpression(forConstantValue: UIColor.white)
             dot.circleStrokeWidth = NSExpression(forConstantValue: 3)
-            dot.circleStrokeColor = NSExpression(
-                forConstantValue: UIColor(red: 0.98, green: 0.45, blue: 0.18, alpha: 1))
+            dot.circleStrokeColor = NSExpression(forConstantValue: FieldUI.accent)
             // On top of the route line, which it is meant to sit on.
             style.addLayer(dot)
         }
@@ -469,9 +469,9 @@ final class WaypointView: MLNAnnotationView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     func apply(isFirst: Bool) {
-        backgroundColor = isFirst
-            ? UIColor(red: 0.36, green: 0.78, blue: 0.47, alpha: 1)
-            : UIColor(red: 0.98, green: 0.45, blue: 0.18, alpha: 1)
+        // Green start, accent for the rest. Semantic: the start is the one
+        // waypoint that means something different from its neighbours.
+        backgroundColor = isFirst ? FieldUI.ok : FieldUI.accent
     }
 
     override func setDragState(
@@ -491,4 +491,13 @@ final class WaypointView: MLNAnnotationView {
             break
         }
     }
+}
+
+
+/// The Field Instrument tokens as UIColor, for the MapLibre layers, which are
+/// configured with NSExpression and never see SwiftUI.
+enum FieldUI {
+    static let accent = UIColor(red: 0xE0 / 255, green: 0x7A / 255, blue: 0x3F / 255, alpha: 1)
+    static let ok = UIColor(red: 0x3F / 255, green: 0xA0 / 255, blue: 0x60 / 255, alpha: 1)
+    static let info = UIColor(red: 0x4F / 255, green: 0x9D / 255, blue: 0xE0 / 255, alpha: 1)
 }

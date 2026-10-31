@@ -13,7 +13,7 @@ struct ProfileView: View {
     /// the finger lifts.
     @Binding var cursor: ProfilePoint?
 
-    private static let accent = Color(red: 0.98, green: 0.45, blue: 0.18)
+    private static let accent = Field.accent
     private static let height: CGFloat = 108
 
     var body: some View {
@@ -21,14 +21,10 @@ struct ProfileView: View {
             header
             chart
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Field.Space.x3)
         .padding(.top, 9)
         .padding(.bottom, 6)
-        .background(.regularMaterial, in: .rect(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(.primary.opacity(0.08), lineWidth: 1)
-        )
+        .fieldOverlay()
     }
 
     // ---------- header ----------
@@ -37,21 +33,18 @@ struct ProfileView: View {
     /// otherwise, so the row never collapses and the chart never shifts.
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("ELEVATION")
-                .font(.system(size: 9, weight: .semibold))
-                .tracking(0.8)
-                .foregroundStyle(.secondary)
+            FieldLabel("Elevation")
 
             Spacer(minLength: 8)
 
             if let cursor {
                 readout(String(format: "%.2f", cursor.distanceMiles), "mi")
-                Text("·").foregroundStyle(.tertiary)
+                Text("·").foregroundStyle(Field.textFaint)
                 readout(Self.feet(cursor.elevationFeet), "ft")
                     .foregroundStyle(Self.accent)
             } else {
                 readout(Self.feet(profile.lowestFeet), "lo")
-                Text("·").foregroundStyle(.tertiary)
+                Text("·").foregroundStyle(Field.textFaint)
                 readout(Self.feet(profile.highestFeet), "hi")
             }
         }
@@ -67,7 +60,7 @@ struct ProfileView: View {
                 .monospacedDigit()
             Text(unit)
                 .font(.system(size: 9))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Field.textDim)
         }
     }
 
@@ -85,7 +78,7 @@ struct ProfileView: View {
                     y: .value("Elevation", point.elevationFeet)
                 )
                 .foregroundStyle(.linearGradient(
-                    colors: [Self.accent.opacity(0.28), Self.accent.opacity(0.02)],
+                    colors: [Self.accent.opacity(0.32), Self.accent.opacity(0.03)],
                     startPoint: .top, endPoint: .bottom))
                 .interpolationMethod(.linear)
 
@@ -100,7 +93,7 @@ struct ProfileView: View {
 
             if let cursor {
                 RuleMark(x: .value("Distance", cursor.distanceMiles))
-                    .foregroundStyle(.primary.opacity(0.35))
+                    .foregroundStyle(Field.textDim)
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 2]))
 
                 PointMark(
@@ -117,20 +110,20 @@ struct ProfileView: View {
         .chartYScale(domain: profile.elevationRange)
         .chartYAxis {
             AxisMarks(preset: .extended, position: .trailing, values: .automatic(desiredCount: 3)) {
-                AxisGridLine().foregroundStyle(.primary.opacity(0.07))
+                AxisGridLine().foregroundStyle(Field.line)
                 AxisValueLabel(format: FloatingPointFormatStyle<Double>
                     .number.precision(.fractionLength(0)))
                     .font(.system(size: 8, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Field.textDim)
             }
         }
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: 4)) {
-                AxisGridLine().foregroundStyle(.primary.opacity(0.07))
+                AxisGridLine().foregroundStyle(Field.line)
                 AxisValueLabel(format: FloatingPointFormatStyle<Double>
                     .number.precision(.fractionLength(1)))
                     .font(.system(size: 8, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Field.textDim)
             }
         }
         .frame(height: Self.height)

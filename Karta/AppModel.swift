@@ -215,6 +215,10 @@ final class AppModel {
         provenance.sort { $0.at > $1.at }
     }
 
+    /// Drives the sources control's active state, so a stale source is
+    /// visible without opening the panel.
+    var hasStaleSource: Bool { provenance.contains { $0.isStale } }
+
     func note(_ records: [ProvenanceRecord]) {
         for record in records { note(record) }
     }

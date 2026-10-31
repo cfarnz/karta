@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Design
+
+- The Field Instrument design pass. `DesignSystem.swift` ports Clay's
+  `tokens.css` to Swift: warm dark neutrals, one accent, semantic colours used
+  only for meaning, a six-step type scale with size-specific tracking, a 4pt
+  space scale, and motion curves under 300ms. Nothing hardcodes a colour,
+  duration or spacing that exists as a token.
+- Dark chrome over a deliberately light topo basemap, fixed regardless of the
+  device setting. The panels recede and the terrain stays the brightest thing
+  on screen.
+- Every measurement is mono and tabular, with its unit riding along dimmed and
+  smaller, so digits do not reflow while a value changes under your finger.
+- **A sources panel.** Every provider already reported which dataset answered,
+  how old it was and whether it came from cache, and nothing displayed any of
+  it. Each row now carries a coloured stripe for live, cached, stale or
+  failed. The control itself turns accent when any source is stale, so a bad
+  source is visible without opening the panel.
+- Selected states are fills rather than bare borders, which read the same as a
+  press and made the Discover list hard to scan.
+- Difficulty badges moved onto the semantic colours instead of an invented
+  scale, and press feedback is now on pointer-down rather than release.
+
 ## 0.1.0 — 31 October 2026
 
 First working build of the native iOS port. The app draws real routes on real

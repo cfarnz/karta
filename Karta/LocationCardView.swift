@@ -11,8 +11,8 @@ struct LocationCardView: View {
     let summary: LocationSummary?
     let isLoading: Bool
 
-    private static let warn = Color(red: 0.85, green: 0.52, blue: 0.13)
-    private static let danger = Color(red: 0.80, green: 0.27, blue: 0.24)
+    private static let warn = Field.warnText
+    private static let danger = Field.dangerText
 
     var body: some View {
         ScrollView {
@@ -28,35 +28,40 @@ struct LocationCardView: View {
 
                     if summary.isEmpty {
                         Text("No source could be reached. Check your connection and try again.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: Field.Size.sm))
+                            .foregroundStyle(Field.textDim)
                     }
                 } else if isLoading {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
+                    HStack(spacing: Field.Space.x2) {
+                        ProgressView().controlSize(.small).tint(Field.accent)
                         Text("Reading the ground…")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: Field.Size.sm))
+                            .foregroundStyle(Field.textDim)
                     }
                 }
 
                 disclaimer
             }
-            .padding(16)
+            .padding(Field.Space.x4)
         }
+        .background(Field.bg1)
     }
 
     // ---------- header ----------
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(summary?.terrain.map { "\(Self.feet($0.elevationFt)) ft" }
-                 ?? (isLoading ? "—" : "Elevation unavailable"))
-                .font(.system(size: 26, weight: .medium, design: .monospaced))
-                .monospacedDigit()
+            if let terrain = summary?.terrain {
+                Readout(value: Self.feet(terrain.elevationFt), unit: "ft",
+                        size: Field.Size.xxl)
+            } else {
+                Text(isLoading ? "—" : "Elevation unavailable")
+                    .font(.system(size: Field.Size.xl, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Field.textDim)
+            }
             Text("\(Self.fixed(point.latitude, 4)), \(Self.fixed(point.longitude, 4))")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .font(.system(size: Field.Size.xs, design: .monospaced))
+                .foregroundStyle(Field.textDim)
                 .textSelection(.enabled)
         }
     }
@@ -86,7 +91,7 @@ struct LocationCardView: View {
                  + "\(Self.whole(terrain.demResolutionM)) m, sampled "
                  + "\(Self.whole(terrain.spacingM)) m apart. Treat as approximate.")
                 .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Field.textFaint)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -122,8 +127,8 @@ struct LocationCardView: View {
         return section("Air quality") {
             HStack {
                 Text("AQI")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: Field.Size.xs))
+                    .foregroundStyle(Field.textDim)
                 Spacer()
                 Text("\(air.aqi) — \(band.label)")
                     .font(.system(size: 11, weight: .semibold))
@@ -151,7 +156,7 @@ struct LocationCardView: View {
             if let advice = band.advice {
                 Text(advice)
                     .font(.system(size: 11))
-                    .foregroundStyle(air.aqi > 100 ? Self.warn : .secondary)
+                    .foregroundStyle(air.aqi > 100 ? Self.warn : Field.textDim)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -165,15 +170,15 @@ struct LocationCardView: View {
 
             if avalanche.isOffSeason {
                 Text("No rating issued. CAIC forecasts run roughly November through May.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: Field.Size.xs))
+                    .foregroundStyle(Field.textDim)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 if let level = avalanche.level, let danger = avalanche.danger {
                     HStack {
                         Text("Danger")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: Field.Size.xs))
+                            .foregroundStyle(Field.textDim)
                         Spacer()
                         Text("\(level) — \(danger)")
                             .font(.system(size: 11, weight: .semibold))
@@ -191,8 +196,8 @@ struct LocationCardView: View {
                 }
                 if let advice = avalanche.travelAdvice {
                     Text(advice)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: Field.Size.xs))
+                        .foregroundStyle(Field.textDim)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -223,9 +228,9 @@ struct LocationCardView: View {
         // from a literal, so `"a" + "b"` would render the asterisks.
         Text("**Not an avalanche forecast.** This is reference data from automated sources. Read the full CAIC bulletin and make your own field observations before committing to terrain.")
             .font(.system(size: 10))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Field.textFaint)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, 4)
+            .padding(.top, Field.Space.x1)
     }
 
     // ---------- building blocks ----------
@@ -234,10 +239,7 @@ struct LocationCardView: View {
         _ title: String, @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(title.uppercased())
-                .font(.system(size: 9, weight: .semibold))
-                .tracking(0.8)
-                .foregroundStyle(.secondary)
+            FieldLabel(title)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -246,13 +248,13 @@ struct LocationCardView: View {
     private func row(_ label: String, _ value: String, tint: Color? = nil) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 12)
+                .font(.system(size: Field.Size.xs))
+                .foregroundStyle(Field.textDim)
+            Spacer(minLength: Field.Space.x3)
             Text(value)
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .monospacedDigit()
-                .foregroundStyle(tint ?? .primary)
+                .foregroundStyle(tint ?? Field.text)
                 .multilineTextAlignment(.trailing)
         }
     }

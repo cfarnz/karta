@@ -14,7 +14,7 @@ struct DiscoverSheet: View {
     /// Supplied by the map, used when there is no location fix.
     let mapCenter: () -> Coordinate
 
-    private static let accent = Color(red: 0.98, green: 0.45, blue: 0.18)
+    private static let accent = Field.accent
 
     var body: some View {
         NavigationStack {
@@ -25,13 +25,15 @@ struct DiscoverSheet: View {
                     status
                     results
                 }
-                .padding(16)
+                .padding(Field.Space.x4)
             }
+            .background(Field.bg1)
             .navigationTitle("Discover")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
+                        .foregroundStyle(Field.accentText)
                 }
             }
         }
@@ -77,10 +79,12 @@ struct DiscoverSheet: View {
 
         Toggle(isOn: $model.discoverSettings.mountainsOnly) {
             VStack(alignment: .leading, spacing: 1) {
-                Text("Mountains only").font(.system(size: 14))
+                Text("Mountains only")
+                    .font(.system(size: Field.Size.sm))
+                    .foregroundStyle(Field.text)
                 Text("Trailheads above \(Int(DiscoverService.mountainTrailheadFt).formatted()) ft")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: Field.Size.xs))
+                    .foregroundStyle(Field.textDim)
             }
         }
         .tint(Self.accent)
@@ -101,14 +105,12 @@ struct DiscoverSheet: View {
 
     private func label(_ title: String, _ readout: String) -> some View {
         HStack {
-            Text(title)
-                .font(.system(size: 9, weight: .semibold))
-                .tracking(0.8)
-                .foregroundStyle(.secondary)
+            FieldLabel(title)
             Spacer()
             Text(readout)
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .monospacedDigit()
+                .foregroundStyle(Field.text)
         }
     }
 
@@ -130,9 +132,7 @@ struct DiscoverSheet: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
-        .tint(Self.accent)
+        .buttonStyle(.fieldProminent)
         .disabled(model.isDiscovering)
     }
 
@@ -141,8 +141,8 @@ struct DiscoverSheet: View {
         if let message = Self.message(for: model.discoverState) {
             HStack(spacing: 8) {
                 Text(message)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: Field.Size.sm))
+                    .foregroundStyle(Field.textDim)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
@@ -197,7 +197,8 @@ struct DiscoverSheet: View {
         return VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(candidate.name)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: Field.Size.sm, weight: .medium))
+                    .foregroundStyle(Field.text)
                     .lineLimit(2)
                 Spacer(minLength: 4)
                 badge(Effort.bucket(candidate.effort))
@@ -205,7 +206,7 @@ struct DiscoverSheet: View {
 
             Text(Self.meta(candidate))
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Field.textDim)
 
             if isSelected {
                 Button {
@@ -216,22 +217,21 @@ struct DiscoverSheet: View {
                 } label: {
                     Text("Load into builder").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
-                .tint(Self.accent)
+                .buttonStyle(.fieldProminent)
                 .disabled(model.isDiscovering)
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Selected is a fill, not just a border: a border alone reads the
+        // same as a press and the list becomes unreadable.
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(isSelected ? Self.accent.opacity(0.10) : Color.primary.opacity(0.04))
+            RoundedRectangle(cornerRadius: Field.Radius.card)
+                .fill(isSelected ? Field.accentFill : Field.bg2)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(isSelected ? Self.accent.opacity(0.55) : .primary.opacity(0.08),
-                        lineWidth: 1)
+            RoundedRectangle(cornerRadius: Field.Radius.card)
+                .stroke(isSelected ? Field.accent : Field.line, lineWidth: 1)
         )
         .contentShape(.rect)
         .onTapGesture {
@@ -257,12 +257,14 @@ struct DiscoverSheet: View {
             .foregroundStyle(Self.tint(bucket))
     }
 
+    /// Semantic, not decorative: difficulty is a meaning, so it maps onto
+    /// the semantic colours rather than an invented scale.
     private static func tint(_ bucket: Effort.Bucket) -> Color {
         switch bucket {
-        case .easy: Color(red: 0.26, green: 0.65, blue: 0.40)
-        case .moderate: Color(red: 0.22, green: 0.52, blue: 0.76)
-        case .hard: Color(red: 0.85, green: 0.52, blue: 0.13)
-        case .veryHard: Color(red: 0.80, green: 0.27, blue: 0.24)
+        case .easy: Field.okText
+        case .moderate: Field.infoText
+        case .hard: Field.warnText
+        case .veryHard: Field.dangerText
         }
     }
 }
