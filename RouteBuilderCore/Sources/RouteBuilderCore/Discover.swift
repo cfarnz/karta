@@ -166,6 +166,68 @@ public actor DiscoverService {
         var elements: [Element]?
     }
 
+    /// Fills in names for anchors OSM left blank or labelled with GPS junk.
+    ///
+    /// Failure here is not failure of the search: an anchor keeps whatever
+    /// name it had, which is the behaviour before this existed.
+    func named(_ trailheads: [Trailhead]) async -> [Trailhead] {
+        let needing = trailheads.enumerated().filter {
+            TrailheadNaming.isUninformative($0.element.name)
+        }
+        guard !needing.isEmpty else { return trailheads }
+
+        let points = needing.map(\.element.coordinate)
+        let features: [TrailheadNaming.NearbyFeature]
+        do {
+            features = try await fetchNearbyFeatures(for: points)
+        } catch {
+            return trailheads
+        }
+
+        var out = trailheads
+        for (index, trailhead) in needing {
+            if let name = TrailheadNaming.bestName(for: trailhead.coordinate, from: features) {
+                out[index].name = name
+            }
+        }
+        return out
+    }
+
+    private func fetchNearbyFeatures(
+        for points: [Coordinate]
+    ) async throws -> [TrailheadNaming.NearbyFeature] {
+        // Keyed on the points themselves, so the same anchors resolve from
+        // cache on a rerun even when the radius slider moved.
+        let key = "trailhead-names:" + points
+            .map { "\(String(format: "%.4f", $0.longitude)),\(String(format: "%.4f", $0.latitude))" }
+            .sorted()
+            .joined(separator: ";")
+
+        let hit = try await cache.cached(key: key, ttl: TTL.trailheads) {
+            var request = URLRequest(url: URL(string: Self.overpass)!)
+            request.httpMethod = "POST"
+            request.httpBody = Data(TrailheadNaming.resolutionQuery(for: points).utf8)
+            let data = try await self.http.data(for: request)
+            return try JSONDecoder()
+                .decode(OverpassCenterResponse.self, from: data)
+                .elements?.compactMap { element -> StoredFeature? in
+                    element.feature.map {
+                        StoredFeature(name: $0.name,
+                                      isPath: $0.kind == .path,
+                                      longitude: $0.coordinate.longitude,
+                                      latitude: $0.coordinate.latitude)
+                    }
+                } ?? []
+        }
+
+        return hit.value.map {
+            TrailheadNaming.NearbyFeature(
+                name: $0.name,
+                kind: $0.isPath ? .path : .area,
+                coordinate: Coordinate(longitude: $0.longitude, latitude: $0.latitude))
+        }
+    }
+
     static func overpassQuery(center: Coordinate, radiusMiles: Double) -> String {
         let radiusM = Int((radiusMiles * Units.metersPerMile).rounded())
         let around = "(around:\(radiusM),\(center.latitude),\(center.longitude))"
@@ -259,8 +321,12 @@ public actor DiscoverService {
             }
         }
 
+        // Naming runs on the picked set, not the whole response: at most a
+        // handful of anchors survive, and resolving names for 150 nodes we
+        // are about to discard would be the expensive half of the search.
+        let picked = pickAcrossBands(nodes, radiusMiles: radiusMiles, limit: limit)
         return TrailheadResult(
-            trailheads: pickAcrossBands(nodes, radiusMiles: radiusMiles, limit: limit),
+            trailheads: await named(picked),
             provenance: provenance
         )
     }

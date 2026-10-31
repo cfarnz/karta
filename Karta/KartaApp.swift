@@ -32,6 +32,8 @@ struct KartaApp: App {
 ///   -previewFirst    select the top result, drawing its preview on the map
 ///   -loadFirst       load the top result into the builder
 ///   -inspectAt <lon,lat>  open the location card on a point
+///   -dumpNames       print the discovered route names to stdout
+///   -dumpTrailheads  print the trailheads found near Boulder, with names
 ///
 /// They exist because the whole chain — BRouter, the elevation providers, the
 /// Terrarium tiles — is otherwise only reachable by tapping the screen, which
@@ -66,6 +68,28 @@ private func applyLaunchFlags(_ model: AppModel) async {
         // so this goes straight to the model with Boulder as the fallback.
         await model.runDiscover(
             mapCenter: Coordinate(longitude: -105.28, latitude: 39.995))
+    }
+
+    if arguments.contains("-dumpTrailheads") {
+        // Isolates the naming change: Discover's own filters discard most
+        // anchors, so the candidate list is a poor view of what was found.
+        let found = await model.discover.findTrailheads(
+            center: Coordinate(longitude: -105.28, latitude: 39.995),
+            radiusMiles: 20, limit: 8)
+        for trailhead in found.trailheads {
+            print("TRAILHEAD: \(trailhead.name) | "
+                  + "\(String(format: "%.1f", trailhead.distanceFromCenterM / 1609.344)) mi")
+        }
+    }
+
+    if arguments.contains("-dumpNames") {
+        // Results live below the fold of a medium-detent sheet, and a
+        // screenshot cannot scroll. Printing them is the only way to assert
+        // on the actual strings.
+        for candidate in model.candidates {
+            print("CANDIDATE: \(candidate.name) | "
+                  + "\(String(format: "%.1f", candidate.distanceMiles)) mi")
+        }
     }
 
     if let first = model.candidates.first {
