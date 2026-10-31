@@ -164,7 +164,8 @@ struct ProfileView: View {
     }
 
     private func scrub(to location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) {
-        let plotX = location.x - geometry[proxy.plotAreaFrame].origin.x
+        guard let plotFrame = proxy.plotFrame else { return }
+        let plotX = location.x - geometry[plotFrame].origin.x
         guard let miles = proxy.value(atX: plotX, as: Double.self),
               let point = profile.point(nearestTo: miles)
         else { return }

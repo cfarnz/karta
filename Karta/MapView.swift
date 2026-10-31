@@ -18,6 +18,14 @@ struct MapView: UIViewRepresentable {
     let terrainOverlay: TerrainOverlay?
     /// The spot being scrubbed on the elevation profile, or nil.
     let cursor: Coordinate?
+    /// A discovered candidate drawn faintly before it is committed.
+    let preview: [Coordinate]?
+    /// Coordinates to frame once, after a Discover search. Cleared by the
+    /// coordinator so a later redraw does not yank the camera back.
+    let fit: [Coordinate]?
+    /// Handed a closure that reads the map's current centre, so Discover can
+    /// fall back to it when there is no location fix.
+    @Binding var centerProvider: () -> Coordinate
 
     /// Still needed for the callbacks, which write back rather than read.
     @Environment(AppModel.self) private var model
@@ -58,7 +66,20 @@ struct MapView: UIViewRepresentable {
         context.coordinator.route = route
         context.coordinator.terrainOverlay = terrainOverlay
         context.coordinator.cursor = cursor
+        context.coordinator.preview = preview
         context.coordinator.styleDescriptor = StyleDescriptor(basemap: basemap, hillshade: hillshade)
+
+        // Built here so the only reference it keeps to the map is weak. Doing
+        // it inside the async block below would also capture `mapView`
+        // strongly in the outer closure, which outlives the view.
+        let readCenter: () -> Coordinate = { [weak mapView] in
+            let center = mapView?.centerCoordinate
+                ?? CLLocationCoordinate2D(latitude: 39.995, longitude: -105.28)
+            return Coordinate(longitude: center.longitude, latitude: center.latitude)
+        }
+        // Published on the next runloop turn: handing a @Binding a new value
+        // from inside makeUIView is a state write during view construction.
+        DispatchQueue.main.async { centerProvider = readCenter }
         return mapView
     }
 
@@ -72,6 +93,7 @@ struct MapView: UIViewRepresentable {
         context.coordinator.route = route
         context.coordinator.terrainOverlay = terrainOverlay
         context.coordinator.cursor = cursor
+        context.coordinator.preview = preview
 
         // Compare what the style was built from, not the file URL: the URL is
         // stable across basemap switches because the filename encodes the
@@ -86,8 +108,10 @@ struct MapView: UIViewRepresentable {
 
         context.coordinator.syncRoute(on: mapView)
         context.coordinator.syncCursor(on: mapView)
+        context.coordinator.syncPreview(on: mapView)
         context.coordinator.overlayController.update(
             mapView: mapView, overlay: terrainOverlay)
+        context.coordinator.frameIfNeeded(fit, on: mapView, model: model)
     }
 
     @MainActor
@@ -99,6 +123,7 @@ struct MapView: UIViewRepresentable {
         var route = RouteState()
         var terrainOverlay: TerrainOverlay?
         var cursor: Coordinate?
+        var preview: [Coordinate]?
         var styleDescriptor = StyleDescriptor(basemap: .openTopo, hillshade: false)
         let overlayController = SlopeOverlayController()
 
@@ -108,6 +133,8 @@ struct MapView: UIViewRepresentable {
         private static let routeCasingLayerID = "karta-route-casing"
         private static let cursorSourceID = "karta-cursor"
         private static let cursorLayerID = "karta-cursor-dot"
+        private static let previewSourceID = "karta-preview"
+        private static let previewLayerID = "karta-preview-line"
 
         // ---------- taps ----------
 
@@ -130,9 +157,11 @@ struct MapView: UIViewRepresentable {
         func mapView(_ mapView: MLNMapView, didFinishLoading style: MLNStyle) {
             installHillshade(on: style)
             installRouteLayers(on: style)
+            installPreviewLayer(on: style)
             installCursorLayer(on: style)
             syncRoute(on: mapView)
             syncCursor(on: mapView)
+            syncPreview(on: mapView)
             overlayController.styleWasReplaced()
             overlayController.update(mapView: mapView, overlay: terrainOverlay)
         }
@@ -214,6 +243,62 @@ struct MapView: UIViewRepresentable {
             line.lineCap = NSExpression(forConstantValue: "round")
             line.lineJoin = NSExpression(forConstantValue: "round")
             style.addLayer(line)
+        }
+
+        /// A discovered candidate, shown before the user commits to it.
+        ///
+        /// Dashed and cool-toned so it never reads as the real route, which
+        /// is solid orange over a dark casing. Installed below the route
+        /// layers so an existing route still wins the overlap.
+        private func installPreviewLayer(on style: MLNStyle) {
+            guard style.source(withIdentifier: Self.previewSourceID) == nil else { return }
+
+            let source = MLNShapeSource(identifier: Self.previewSourceID, shape: nil, options: nil)
+            style.addSource(source)
+
+            let line = MLNLineStyleLayer(identifier: Self.previewLayerID, source: source)
+            line.lineColor = NSExpression(
+                forConstantValue: UIColor(red: 0.16, green: 0.42, blue: 0.68, alpha: 0.9))
+            line.lineWidth = NSExpression(forConstantValue: 3)
+            line.lineDashPattern = NSExpression(forConstantValue: [2, 1.5])
+            line.lineCap = NSExpression(forConstantValue: "round")
+            style.addLayer(line)
+        }
+
+        func syncPreview(on mapView: MLNMapView) {
+            guard let style = mapView.style,
+                  let source = style.source(withIdentifier: Self.previewSourceID)
+                    as? MLNShapeSource
+            else { return }
+
+            guard let preview, preview.count >= 2 else { return source.shape = nil }
+            source.shape = MLNPolylineFeature(
+                coordinates: preview.map {
+                    CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                },
+                count: UInt(preview.count))
+        }
+
+        /// Frames a set of coordinates once, then clears the request.
+        ///
+        /// Consuming it here rather than leaving it set is what stops the
+        /// camera being yanked back to the search results every time an
+        /// unrelated redraw happens.
+        func frameIfNeeded(_ coordinates: [Coordinate]?, on mapView: MLNMapView, model: AppModel?) {
+            guard let coordinates, coordinates.count >= 2 else { return }
+            let bounds = MLNCoordinateBounds(
+                sw: CLLocationCoordinate2D(
+                    latitude: coordinates.map(\.latitude).min() ?? 0,
+                    longitude: coordinates.map(\.longitude).min() ?? 0),
+                ne: CLLocationCoordinate2D(
+                    latitude: coordinates.map(\.latitude).max() ?? 0,
+                    longitude: coordinates.map(\.longitude).max() ?? 0))
+            mapView.setVisibleCoordinateBounds(
+                bounds,
+                edgePadding: UIEdgeInsets(top: 70, left: 50, bottom: 70, right: 50),
+                animated: true,
+                completionHandler: nil)
+            model?.pendingFit = nil
         }
 
         /// The scrub marker, drawn as a style layer rather than an annotation.

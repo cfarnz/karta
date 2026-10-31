@@ -60,6 +60,20 @@ final class AppModel {
     /// Nil means no terrain overlay.
     var terrainOverlay: TerrainOverlay?
 
+    // ---------- discover ----------
+    var discoverSettings = DiscoverSettings()
+    private(set) var discoverState = DiscoverState.idle
+    private(set) var candidates: [Candidate] = []
+    /// The candidate previewed on the map. On the web this was whatever the
+    /// pointer was hovering; a touch screen has no hover, so it is the
+    /// selected row and it stays until another is picked.
+    var previewedCandidate: Candidate?
+    /// Set after a search so the map can frame what it found, then cleared so
+    /// it does not re-frame on unrelated redraws.
+    var pendingFit: [Coordinate]?
+
+    private let location = LocationProvider()
+
     // ---------- provenance ----------
     private(set) var provenance: [ProvenanceRecord] = []
 
@@ -103,6 +117,13 @@ final class AppModel {
 
     func addWaypoint(_ coordinate: Coordinate) async {
         snapshot()
+        await addWaypointWithoutSnapshot(coordinate)
+    }
+
+    /// Loading a discovered route adds a dozen vias in a row, and each one
+    /// pushing its own snapshot would bury the previous route under a dozen
+    /// taps of undo.
+    private func addWaypointWithoutSnapshot(_ coordinate: Coordinate) async {
         route.waypoints.append(coordinate)
         guard route.waypoints.count > 1 else { return }
 
@@ -186,6 +207,90 @@ final class AppModel {
 
     func note(_ records: [ProvenanceRecord]) {
         for record in records { note(record) }
+    }
+
+    // ---------- discover ----------
+
+    /// Where a Discover search has got to. One value rather than a bag of
+    /// flags and strings, so the sheet cannot render "searching" and a result
+    /// count at the same time.
+    enum DiscoverState: Equatable {
+        case idle
+        case locating
+        /// Completed and total candidate jobs, for a real bar rather than a
+        /// spinner over a search that can take half a minute.
+        case searching(done: Int, total: Int)
+        case finished(count: Int, usedMapCenter: Bool)
+        case failed(String)
+        case loading
+        case loaded(String)
+    }
+
+    var isDiscovering: Bool {
+        switch discoverState {
+        case .locating, .searching, .loading: true
+        default: false
+        }
+    }
+
+    /// `mapCenter` is the fallback when there is no location fix, matching
+    /// the web app: a search from the middle of the screen beats no search.
+    func runDiscover(mapCenter: Coordinate) async {
+        guard !isDiscovering else { return }
+        candidates = []
+        previewedCandidate = nil
+        discoverState = .locating
+
+        let fix = await location.currentLocation()
+        let center = fix ?? mapCenter
+        let usedMapCenter = fix == nil
+
+        discoverState = .searching(done: 0, total: 0)
+        let result = await discover.discover(discoverSettings.options(center: center)) {
+            done, total in
+            // The service reports from inside a task group, off the main
+            // actor, so the hop back is required rather than incidental.
+            Task { @MainActor [weak self] in
+                guard let self, case .searching = discoverState else { return }
+                discoverState = .searching(done: done, total: total)
+            }
+        }
+
+        note(result.provenance)
+        candidates = result.candidates
+        // Framing every candidate at once is what makes the result list
+        // legible — otherwise the map is still wherever it was.
+        pendingFit = result.candidates.isEmpty
+            ? nil : result.candidates.flatMap(\.coordinates)
+        discoverState = .finished(count: result.candidates.count,
+                                  usedMapCenter: usedMapCenter)
+    }
+
+    /// Replaces the route with a candidate's via points.
+    ///
+    /// The vias are re-routed one leg at a time rather than the candidate's
+    /// finished track being dropped in whole. That costs a few round trips,
+    /// and buys a route the user can actually drag — which is the point of
+    /// loading it into the builder instead of just looking at it.
+    func load(_ candidate: Candidate) async {
+        guard !isDiscovering else { return }
+        discoverState = .loading
+        previewedCandidate = nil
+
+        snapshot()
+        route = RouteState()
+        for via in candidate.vias {
+            await addWaypointWithoutSnapshot(via)
+        }
+
+        discoverState = .loaded(
+            "\(candidate.name) \(Int(candidate.distanceMiles.rounded())) mi loop")
+    }
+
+    func clearDiscoverResults() {
+        candidates = []
+        previewedCandidate = nil
+        discoverState = .idle
     }
 
     // ---------- housekeeping ----------

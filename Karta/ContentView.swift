@@ -3,6 +3,15 @@ import RouteBuilderCore
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
+    /// Debug only, so a screenshot can see a sheet that is otherwise only
+    /// reachable by tapping.
+    var openDiscoverOnLaunch = false
+    @State private var showDiscover = false
+    /// Filled in by the map so Discover can fall back to what is on screen
+    /// when there is no location fix.
+    @State private var mapCenter: () -> Coordinate = {
+        Coordinate(longitude: -105.28, latitude: 39.995)
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -10,7 +19,10 @@ struct ContentView: View {
                     basemap: model.basemap,
                     hillshade: model.hillshadeEnabled,
                     terrainOverlay: model.terrainOverlay,
-                    cursor: model.cursor?.coordinate)
+                    cursor: model.cursor?.coordinate,
+                    preview: model.previewedCandidate?.coordinates,
+                    fit: model.pendingFit,
+                    centerProvider: $mapCenter)
                 .ignoresSafeArea()
 
             VStack(spacing: 8) {
@@ -36,6 +48,18 @@ struct ContentView: View {
             }
             .animation(.snappy(duration: 0.28), value: model.profile.isEmpty)
         }
+        .sheet(isPresented: $showDiscover) {
+            DiscoverSheet(mapCenter: mapCenter)
+                .environment(model)
+                // Medium by default and the map left interactive behind it:
+                // the sheet drives a preview on that map, so burying it
+                // would hide the thing being previewed.
+                .presentationDetents([.medium, .large])
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        }
+        .task {
+            if openDiscoverOnLaunch { showDiscover = true }
+        }
         .task(id: model.route.waypoints.count) {
             // Terrain is re-fetchable, so flushing opportunistically costs
             // nothing and keeps the point cache from living only in memory.
@@ -58,7 +82,9 @@ struct ContentView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.regularMaterial, in: .rect(cornerRadius: 12))
+        // Only the material is faded, not the content: dropping the whole
+        // view's opacity would take the numbers down with it.
+        .background(.regularMaterial.opacity(0.75), in: .rect(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(.primary.opacity(0.08), lineWidth: 1)
@@ -148,6 +174,10 @@ struct ContentView: View {
             }
             .buttonStyle(.bordered)
             .tint(terrainActive ? .orange : nil)
+
+            Button { showDiscover = true } label: {
+                Image(systemName: "sparkle.magnifyingglass")
+            }
 
             Spacer()
 
