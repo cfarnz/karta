@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **App icon.** Contour rings fading from the accent at the summit to warm
+  grey at the outside, on the same warm dark ground as the app chrome. The
+  gradient is what carries it at small sizes: a single flat colour reads as a
+  fingerprint at 60pt. Added as an asset catalog, which the project did not
+  have at all before, so builds were shipping the blank default.
+
 ## 0.1.0 — 31 October 2026
 
 First working build of the native iOS port. The app draws real routes on real
