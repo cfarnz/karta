@@ -24,12 +24,35 @@ DEVICE_NAME="Karta"
 BUNDLE_ID="com.cfarnz.karta"
 
 # Reuse a simulator if one exists, otherwise make one.
-UDID=$(xcrun simctl list devices available \
-       | grep -oE '\(([0-9A-F-]{36})\)' | tr -d '()' | head -1 || true)
+#
+# Everything here reads simctl's JSON rather than its text. The text output
+# was parsed with regexes that broke on the iOS 27 naming: runtime
+# identifiers gained a device suffix (...iOS-27-2-iPhone19-4), and a pattern
+# of 'iOS[0-9.-]+' clipped it to an invalid 'iOS-27-2-'.
+UDID=$(xcrun simctl list devices available -j 2>/dev/null | python3 -c "
+import json, sys
+devices = json.load(sys.stdin)['devices']
+print(next((d['udid'] for v in devices.values() for d in v), ''))
+")
+
 if [ -z "$UDID" ]; then
   echo "==> creating a simulator"
-  RUNTIME=$(xcrun simctl list runtimes | grep -oE 'com\.apple\.CoreSimulator\.SimRuntime\.iOS[0-9.-]+' | head -1)
-  TYPE=$(xcrun simctl list devicetypes | grep -oE 'com\.apple\.CoreSimulator\.SimDeviceType\.iPhone-1[0-9]-Pro' | head -1)
+  RUNTIME=$(xcrun simctl list runtimes -j 2>/dev/null | python3 -c "
+import json, sys
+runtimes = [r for r in json.load(sys.stdin)['runtimes']
+            if r.get('isAvailable') and r.get('platform') == 'iOS']
+print(runtimes[-1]['identifier'] if runtimes else '')
+")
+  TYPE=$(xcrun simctl list devicetypes -j 2>/dev/null | python3 -c "
+import json, sys
+types = [t for t in json.load(sys.stdin)['devicetypes']
+         if 'iPhone' in t['name'] and 'Pro' in t['name']]
+print(types[-1]['identifier'] if types else '')
+")
+  if [ -z "$RUNTIME" ] || [ -z "$TYPE" ]; then
+    echo "no usable iOS runtime or iPhone device type; check Xcode's installed platforms" >&2
+    exit 1
+  fi
   UDID=$(xcrun simctl create "$DEVICE_NAME" "$TYPE" "$RUNTIME")
 fi
 echo "==> simulator $UDID"

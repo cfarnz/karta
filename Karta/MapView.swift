@@ -16,6 +16,8 @@ struct MapView: UIViewRepresentable {
     let basemap: Basemap
     let hillshade: Bool
     let terrainOverlay: TerrainOverlay?
+    /// The spot being scrubbed on the elevation profile, or nil.
+    let cursor: Coordinate?
 
     /// Still needed for the callbacks, which write back rather than read.
     @Environment(AppModel.self) private var model
@@ -55,6 +57,7 @@ struct MapView: UIViewRepresentable {
         context.coordinator.mapView = mapView
         context.coordinator.route = route
         context.coordinator.terrainOverlay = terrainOverlay
+        context.coordinator.cursor = cursor
         context.coordinator.styleDescriptor = StyleDescriptor(basemap: basemap, hillshade: hillshade)
         return mapView
     }
@@ -68,6 +71,7 @@ struct MapView: UIViewRepresentable {
         // whatever the coordinator holds.
         context.coordinator.route = route
         context.coordinator.terrainOverlay = terrainOverlay
+        context.coordinator.cursor = cursor
 
         // Compare what the style was built from, not the file URL: the URL is
         // stable across basemap switches because the filename encodes the
@@ -81,6 +85,7 @@ struct MapView: UIViewRepresentable {
         }
 
         context.coordinator.syncRoute(on: mapView)
+        context.coordinator.syncCursor(on: mapView)
         context.coordinator.overlayController.update(
             mapView: mapView, overlay: terrainOverlay)
     }
@@ -93,6 +98,7 @@ struct MapView: UIViewRepresentable {
         /// can redraw after a style swap without reaching back into SwiftUI.
         var route = RouteState()
         var terrainOverlay: TerrainOverlay?
+        var cursor: Coordinate?
         var styleDescriptor = StyleDescriptor(basemap: .openTopo, hillshade: false)
         let overlayController = SlopeOverlayController()
 
@@ -100,6 +106,8 @@ struct MapView: UIViewRepresentable {
         private static let routeSourceID = "karta-route"
         private static let routeLayerID = "karta-route-line"
         private static let routeCasingLayerID = "karta-route-casing"
+        private static let cursorSourceID = "karta-cursor"
+        private static let cursorLayerID = "karta-cursor-dot"
 
         // ---------- taps ----------
 
@@ -122,7 +130,9 @@ struct MapView: UIViewRepresentable {
         func mapView(_ mapView: MLNMapView, didFinishLoading style: MLNStyle) {
             installHillshade(on: style)
             installRouteLayers(on: style)
+            installCursorLayer(on: style)
             syncRoute(on: mapView)
+            syncCursor(on: mapView)
             overlayController.styleWasReplaced()
             overlayController.update(mapView: mapView, overlay: terrainOverlay)
         }
@@ -204,6 +214,43 @@ struct MapView: UIViewRepresentable {
             line.lineCap = NSExpression(forConstantValue: "round")
             line.lineJoin = NSExpression(forConstantValue: "round")
             style.addLayer(line)
+        }
+
+        /// The scrub marker, drawn as a style layer rather than an annotation.
+        ///
+        /// A drag moves this on every frame. Annotations go through view
+        /// recycling and callout bookkeeping for each change; a point in a
+        /// shape source is just a new geometry.
+        private func installCursorLayer(on style: MLNStyle) {
+            guard style.source(withIdentifier: Self.cursorSourceID) == nil else { return }
+
+            let source = MLNShapeSource(identifier: Self.cursorSourceID, shape: nil, options: nil)
+            style.addSource(source)
+
+            let dot = MLNCircleStyleLayer(identifier: Self.cursorLayerID, source: source)
+            dot.circleRadius = NSExpression(forConstantValue: 6)
+            dot.circleColor = NSExpression(forConstantValue: UIColor.white)
+            dot.circleStrokeWidth = NSExpression(forConstantValue: 3)
+            dot.circleStrokeColor = NSExpression(
+                forConstantValue: UIColor(red: 0.98, green: 0.45, blue: 0.18, alpha: 1))
+            // On top of the route line, which it is meant to sit on.
+            style.addLayer(dot)
+        }
+
+        func syncCursor(on mapView: MLNMapView) {
+            guard let style = mapView.style,
+                  let source = style.source(withIdentifier: Self.cursorSourceID)
+                    as? MLNShapeSource
+            else { return }
+
+            source.shape = cursor.map {
+                // MLNPointFeature inherits its coordinate as a settable
+                // property; there is no initialiser that takes one.
+                let feature = MLNPointFeature()
+                feature.coordinate = CLLocationCoordinate2D(
+                    latitude: $0.latitude, longitude: $0.longitude)
+                return feature
+            }
         }
 
         // ---------- route rendering ----------

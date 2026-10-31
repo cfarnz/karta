@@ -9,7 +9,8 @@ struct ContentView: View {
             MapView(route: model.route,
                     basemap: model.basemap,
                     hillshade: model.hillshadeEnabled,
-                    terrainOverlay: model.terrainOverlay)
+                    terrainOverlay: model.terrainOverlay,
+                    cursor: model.cursor?.coordinate)
                 .ignoresSafeArea()
 
             VStack(spacing: 8) {
@@ -20,7 +21,21 @@ struct ContentView: View {
             }
             .padding(.horizontal, 12)
         }
-        .safeAreaInset(edge: .bottom) { controls }
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 8) {
+                // Only once there is a line to plot. An empty chart is a box
+                // of axes taking a third of the map for nothing.
+                if !model.profile.isEmpty {
+                    ProfileView(profile: model.profile,
+                                cursor: Binding(get: { model.cursor },
+                                                set: { model.cursor = $0 }))
+                    .padding(.horizontal, 12)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                controls
+            }
+            .animation(.snappy(duration: 0.28), value: model.profile.isEmpty)
+        }
         .task(id: model.route.waypoints.count) {
             // Terrain is re-fetchable, so flushing opportunistically costs
             // nothing and keeps the point cache from living only in memory.

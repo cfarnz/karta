@@ -12,8 +12,37 @@ import RouteBuilderCore
 @MainActor
 final class AppModel {
     // ---------- route ----------
-    private(set) var route = RouteState()
+    /// Written only through `route` below, so the profile can never fall out
+    /// of step with the track it was built from.
+    private var storedRoute = RouteState()
+
+    /// Mutating this — including in place, as `route.waypoints.append` does —
+    /// goes through the setter and rebuilds the profile. Funnelling every
+    /// write through one place beats recomputing at the end of each editing
+    /// method, which is a step that is easy to forget to add to the next one.
+    private(set) var route: RouteState {
+        get { storedRoute }
+        set {
+            storedRoute = newValue
+            // Cached rather than computed on read: a long route is a couple
+            // of thousand points, and SwiftUI reads this on every frame of a
+            // map pan.
+            profile = ElevationProfile(track: newValue.track)
+            // A cursor placed by a scrub refers to a point on the old track.
+            cursor = nil
+        }
+    }
+
     private var undoStack: [RouteState] = []
+
+    /// Distance versus elevation along the current track.
+    private(set) var profile = ElevationProfile.empty
+
+    /// The sample currently being scrubbed on the elevation profile. The
+    /// chart reads it for its readout and the map for its marker, so it lives
+    /// here rather than inside the chart — two views showing one cursor.
+    /// Nil when nothing is being scrubbed.
+    var cursor: ProfilePoint?
     /// Outstanding leg rebuilds. A count rather than a flag because dragging a
     /// middle waypoint rebuilds two legs at once.
     private(set) var pendingLegs = 0
