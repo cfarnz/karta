@@ -35,6 +35,8 @@ struct ContentView: View {
                 // reading the wrong one.
                 if model.isRecording {
                     recordingBar
+                } else if let track = model.viewedTrack {
+                    viewedTrackBar(track)
                 } else {
                     statsBar
                 }
@@ -91,8 +93,8 @@ struct ContentView: View {
             VStack(spacing: Field.Space.x2) {
                 // Only once there is a line to plot. An empty chart is a box
                 // of axes taking a third of the map for nothing.
-                if !model.profile.isEmpty {
-                    ProfileView(profile: model.profile,
+                if !displayedProfile.isEmpty {
+                    ProfileView(profile: displayedProfile,
                                 cursor: Binding(get: { model.cursor },
                                                 set: { model.cursor = $0 }))
                     .padding(.horizontal, Field.Space.x3)
@@ -100,7 +102,7 @@ struct ContentView: View {
                 }
                 controls
             }
-            .animation(Field.drawer(), value: model.profile.isEmpty)
+            .animation(Field.drawer(), value: displayedProfile.isEmpty)
         }
         .task {
             if openDiscoverOnLaunch { showDiscover = true }
@@ -288,6 +290,72 @@ struct ContentView: View {
         case .paused(.automatic): "AUTO-PAUSED"
         case .idle, .stopped: "RECORDED"
         }
+    }
+
+    /// An open recording's profile stands in for the route's, because it is
+    /// the line on the map. Only one of the two is ever drawn.
+    private var displayedProfile: ElevationProfile {
+        model.viewedTrack == nil ? model.profile : model.viewedProfile
+    }
+
+    /// A saved recording, open on the map.
+    ///
+    /// Its own bar rather than the route's: these numbers are a record of
+    /// something that happened, and the route's are a plan. Reading one as
+    /// the other is the whole reason recordings are a separate type.
+    private func viewedTrackBar(_ track: Track) -> some View {
+        let stats = track.stats
+        return HStack(spacing: Field.Space.x4) {
+            VStack(alignment: .leading, spacing: 1) {
+                FieldLabel(track.name.uppercased())
+                Readout(value: String(format: "%.2f", stats.totalMiles),
+                        unit: "mi", size: 20)
+            }
+
+            Divider().frame(height: 26).overlay(Field.line)
+
+            VStack(alignment: .leading, spacing: 1) {
+                FieldLabel("GAIN")
+                Readout(value: String(format: "%.0f", stats.totalGainFeet),
+                        unit: "ft", size: 20)
+            }
+
+            Divider().frame(height: 26).overlay(Field.line)
+
+            VStack(alignment: .leading, spacing: 1) {
+                FieldLabel("ELAPSED")
+                Readout(value: duration(stats.elapsedSeconds), unit: "", size: 20)
+            }
+
+            Button { model.closeTrack() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Field.textDim)
+                    .frame(width: 28, height: 28)
+            }
+        }
+        .padding(.leading, Field.Space.x4)
+        .padding(.trailing, Field.Space.x2)
+        .padding(.vertical, Field.Space.x3)
+        .fieldOverlay()
+        .overlay(alignment: .bottomLeading) {
+            if stats.unresolvedGapCount > 0 || stats.hasEstimate {
+                Text(gapNote(stats))
+                    .font(.system(size: 9))
+                    .foregroundStyle(Field.textFaint)
+                    .padding(.leading, Field.Space.x4)
+                    .padding(.bottom, 2)
+            }
+        }
+    }
+
+    /// Says which way the total is unreliable, rather than just that it is.
+    private func gapNote(_ stats: TrackStats) -> String {
+        if stats.unresolvedGapCount > 0 {
+            let count = stats.unresolvedGapCount
+            return "\(count) unbridged gap\(count == 1 ? "" : "s") — total reads low"
+        }
+        return "includes \(distance(stats.estimatedMiles * Units.metersPerMile)) estimated"
     }
 
     /// One button, one job at a time: tap toggles running and paused, hold

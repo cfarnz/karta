@@ -35,7 +35,18 @@ struct TracksSheet: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(model.savedTracks) { summary in
-                            row(summary)
+                            Button {
+                                Task {
+                                    await model.openTrack(summary.id)
+                                    // Dismissing on open: the sheet covers
+                                    // half the map, and the map is the thing
+                                    // the tap asked to see.
+                                    dismiss()
+                                }
+                            } label: {
+                                row(summary)
+                            }
+                            .buttonStyle(.plain)
                             Divider().overlay(Field.line)
                         }
                     }

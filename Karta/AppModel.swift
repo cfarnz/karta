@@ -108,8 +108,19 @@ final class AppModel {
 
     var isRecording: Bool { recorder.state.wantsLocation }
     var recordingStats: TrackStats { recorder.track.stats }
-    /// Recorded and estimated spans for the map.
-    var recordedSpans: [TrackSpan] { recorder.track.spans }
+    /// A saved recording opened from the list, or nil.
+    private(set) var viewedTrack: Track?
+    /// Which one, so deleting the open recording can close it.
+    private(set) var viewedTrackID: UUID?
+    /// Built once when a recording is opened, for the same reason the route's
+    /// profile is cached: SwiftUI reads it on every frame of a map pan.
+    private(set) var viewedProfile = ElevationProfile.empty
+
+    /// What the map draws. A live recording wins — the list is unreachable
+    /// while one is running, so the two can never compete for the line.
+    var recordedSpans: [TrackSpan] {
+        isRecording ? recorder.track.spans : viewedTrack?.spans ?? []
+    }
 
     // ---------- provenance ----------
     private(set) var provenance: [ProvenanceRecord] = []
@@ -244,6 +255,7 @@ final class AppModel {
 
     func startRecording() async {
         guard !isRecording else { return }
+        closeTrack()
         recorder = TrackRecorder()
         recorder.start()
         await beginRecording(named: defaultRecordingName)
@@ -444,12 +456,41 @@ final class AppModel {
     }
 
     func deleteTrack(_ id: UUID) async {
+        // Closing first, or the map would keep drawing a recording that no
+        // longer exists and the bar would offer to export it.
+        if viewedTrackID == id { closeTrack() }
         await tracks.delete(id)
         await refreshSavedTracks()
     }
 
     func loadTrack(_ id: UUID) async -> Track? {
         await tracks.load(id)
+    }
+
+    /// Opens a saved recording onto the map.
+    ///
+    /// Read-only: a recording is evidence, and the app has no story for
+    /// editing one. The route underneath is left alone rather than replaced,
+    /// so closing the recording puts the user back where they were.
+    func openTrack(_ id: UUID) async {
+        guard let track = await tracks.load(id) else { return }
+        viewedTrack = track
+        viewedTrackID = id
+        cursor = nil
+
+        // The profile follows the drawn line, bridges included, so the chart
+        // and the map agree about where a given distance falls. An unbridged
+        // gap is a jump in both, which is the honest reading of one.
+        let drawn = track.spans.flatMap(\.coordinates)
+        viewedProfile = ElevationProfile(track: drawn)
+        pendingFit = drawn.count >= 2 ? drawn : nil
+    }
+
+    func closeTrack() {
+        viewedTrack = nil
+        viewedTrackID = nil
+        viewedProfile = .empty
+        cursor = nil
     }
 
     #if DEBUG

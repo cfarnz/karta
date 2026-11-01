@@ -170,6 +170,18 @@
   deleting first would lose it on the one path that is meant to be safe.
 - Each track is written beside a small summary file, so the list shows
   distance, gain and gap count without decoding a few thousand points per row.
+- **Tapping a recording opens it on the map**, framed, with its own stats bar
+  and its elevation profile in the chart. Read-only: a recording is evidence
+  and the app has no story for editing one. The route underneath is left
+  alone rather than replaced, so closing the recording puts you back where
+  you were.
+- The bar names which way the total is unreliable rather than only that it
+  is: unbridged gaps mean it reads low, a bridge means part of it is
+  estimated. Deleting the open recording closes it first, so the map cannot
+  keep drawing a hike that no longer exists.
+- The profile follows the drawn line, bridges included, so the chart and the
+  map agree about where a given distance falls. An unbridged gap is a jump in
+  both, which is the honest reading of one.
 - GPX export from the recordings list, written to a real file so it arrives
   in Mail as something Gaia and COROS can open rather than as pasted text.
   Deleting asks first — it is the one irreversible thing in the app, with no
@@ -191,9 +203,7 @@
   stay visible, because provenance being permanently visible was a deliberate
   call and burying it would undo it.
 
-Saved routes still do not exist — only recordings persist. Opening a saved
-recording back onto the map is not wired up either: the list shows them,
-exports them and deletes them, but tapping a row does nothing yet.
+Saved routes still do not exist — only recordings persist.
 
 ## 0.1.0 — 31 October 2026
 

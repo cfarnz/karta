@@ -60,6 +60,7 @@ struct KartaApp: App {
 ///   -dumpTracks      print the recordings saved on disk
 ///   -keepJournal     skip the interrupted-recording check, leaving the journal
 ///   -saveInterrupted answer the interrupted-recording prompt with "Save it"
+///   -openFirstTrack  open the newest saved recording on the map
 ///
 /// They exist because the whole chain — BRouter, the elevation providers, the
 /// Terrarium tiles — is otherwise only reachable by tapping the screen, which
@@ -139,6 +140,11 @@ private func applyLaunchFlags(_ model: AppModel) async {
     // The prompt's answers are taps, and a script has no finger.
     if arguments.contains("-saveInterrupted") {
         await model.saveInterrupted()
+    }
+
+    // Opening one is a tap on a sheet row, which a screenshot cannot do.
+    if arguments.contains("-openFirstTrack"), let first = model.savedTracks.first {
+        await model.openTrack(first.id)
     }
 
     if arguments.contains("-dumpTracks") {
