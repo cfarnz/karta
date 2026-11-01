@@ -148,10 +148,52 @@
   simulator, so the permission alert blocks every headless run and a real
   recording cannot be scripted at all.
 
-A recording still lives only in memory: stopping fills its elevations and
-leaves it on screen, but nothing is saved to disk yet and there is no GPX
-export from the UI. Saved tracks want designing alongside saved routes, which
-do not exist either.
+### Saved recordings
+
+- **Recordings survive the app dying.** The requirement was never "save the
+  track when the user taps stop" — it was "the phone died four hours into a
+  hike". Each accepted fix is appended to a journal as it happens, one JSON
+  object per line, and only becomes a finished track at the end. A crash
+  leaves a journal; the next launch finds it and offers the hike back with
+  three answers: keep recording, save it, discard.
+- Carrying on from a recovered journal marks a `terminated` gap first, so the
+  line never runs straight through the part the phone was off for.
+- Line-delimited on purpose: a half-written final line is the expected shape
+  of a crash, and replay drops that one line rather than the hike.
+- **Not in the Caches directory.** `ProviderCache` lives there and evicts the
+  oldest files to stay inside a byte budget, and iOS may purge the whole
+  directory under storage pressure. Both are right for tiles and elevation
+  samples, which can be fetched again, and catastrophic for the only copy of
+  somebody's hike.
+- Saving writes the track and then drops the journal, in that order. A failed
+  write leaves the journal, so the next launch still offers the hike;
+  deleting first would lose it on the one path that is meant to be safe.
+- Each track is written beside a small summary file, so the list shows
+  distance, gain and gap count without decoding a few thousand points per row.
+- GPX export from the recordings list, written to a real file so it arrives
+  in Mail as something Gaia and COROS can open rather than as pasted text.
+  Deleting asks first — it is the one irreversible thing in the app, with no
+  undo stack behind it.
+
+### Controls
+
+- **One floating button that changes purpose: tap toggles running and paused,
+  hold saves.** It floats over the map rather than sitting in the control row,
+  because it is the only control whose job changes with the state of the app.
+  The split is what keeps it to one button: a manual pause deliberately never
+  ends itself, so resume has to exist, and here resume is simply tapping
+  again. The terminal action gets the deliberate gesture, which is also the
+  right weight for it — ending a hike by brushing a button is the mistake
+  worth designing against. HOLD TO SAVE is spelled out while recording, since
+  a long press has no affordance and this one ends the hike.
+- The control row had outgrown its width. Recordings, undo and clear moved
+  into an overflow menu; the basemap picker, terrain, Discover and sources
+  stay visible, because provenance being permanently visible was a deliberate
+  call and burying it would undo it.
+
+Saved routes still do not exist — only recordings persist. Opening a saved
+recording back onto the map is not wired up either: the list shows them,
+exports them and deletes them, but tapping a row does nothing yet.
 
 ## 0.1.0 — 31 October 2026
 

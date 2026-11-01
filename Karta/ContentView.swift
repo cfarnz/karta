@@ -9,6 +9,7 @@ struct ContentView: View {
     var openSourcesOnLaunch = false
     @State private var showDiscover = false
     @State private var showSources = false
+    @State private var showTracks = false
     /// Filled in by the map so Discover can fall back to what is on screen
     /// when there is no location fix.
     @State private var mapCenter: () -> Coordinate = {
@@ -45,8 +46,11 @@ struct ContentView: View {
 
             if let stretch = model.pendingRecovery {
                 recoveryPrompt(stretch)
+            } else if let interrupted = model.interrupted {
+                interruptedPrompt(interrupted)
             }
         }
+        .overlay(alignment: .bottomTrailing) { recordControl }
         // The inspection card. Driven off the point rather than a separate
         // flag, so there is one thing to clear when it closes.
         .sheet(isPresented: Binding(
@@ -70,6 +74,12 @@ struct ContentView: View {
                 // would hide the thing being previewed.
                 .presentationDetents([.medium, .large])
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+                .presentationBackground(Field.bg1)
+        }
+        .sheet(isPresented: $showTracks) {
+            TracksSheet()
+                .environment(model)
+                .presentationDetents([.medium, .large])
                 .presentationBackground(Field.bg1)
         }
         .sheet(isPresented: $showSources) {
@@ -203,7 +213,61 @@ struct ContentView: View {
                     Spacer()
                     // Prominent because it is the likely answer: the points
                     // are real, and the user usually did walk that stretch.
-                    Button("Include it") { model.acceptRecovery() }
+                    Button("Include it") { Task { await model.acceptRecoveryAndJournal() } }
+                        .buttonStyle(.fieldProminent)
+                }
+            }
+            .padding(Field.Space.x4)
+            .fieldSurface()
+            .padding(.horizontal, Field.Space.x6)
+        }
+        .transition(.opacity)
+    }
+
+    /// Offered at launch when the app was killed mid-recording.
+    ///
+    /// Three answers rather than two, because "carry on" is a real one: the
+    /// usual reason to be looking at this screen is that the phone died in a
+    /// pocket and the hike is still happening.
+    private func interruptedPrompt(_ track: Track) -> some View {
+        ZStack {
+            Field.bg0.opacity(0.72).ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: Field.Space.x3) {
+                Text("Recording interrupted")
+                    .font(.system(size: Field.Size.lg, weight: .semibold))
+                    .foregroundStyle(Field.text)
+
+                HStack(spacing: Field.Space.x4) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        FieldLabel("RECOVERED")
+                        Readout(value: String(format: "%.2f", track.stats.totalMiles),
+                                unit: "mi", size: 20)
+                    }
+                    Divider().frame(height: 26).overlay(Field.line)
+                    VStack(alignment: .leading, spacing: 1) {
+                        FieldLabel("ELAPSED")
+                        Readout(value: duration(track.stats.elapsedSeconds),
+                                unit: "", size: 20)
+                    }
+                }
+
+                Text("Karta closed while this was recording. Everything up to "
+                     + "that moment was saved as it happened. Carrying on "
+                     + "leaves a gap for the part the phone was off for.")
+                    .font(.system(size: Field.Size.sm))
+                    .foregroundStyle(Field.textDim)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: Field.Space.x2) {
+                    Button("Discard", role: .destructive) {
+                        Task { await model.discardInterrupted() }
+                    }
+                    .buttonStyle(.field)
+                    Spacer()
+                    Button("Save it") { Task { await model.saveInterrupted() } }
+                        .buttonStyle(.field)
+                    Button("Keep recording") { Task { await model.continueInterrupted() } }
                         .buttonStyle(.fieldProminent)
                 }
             }
@@ -226,39 +290,95 @@ struct ContentView: View {
         }
     }
 
-    private var recordingControls: some View {
-        HStack(spacing: Field.Space.x2) {
-            switch model.recorder.state {
-            case .idle, .stopped:
-                Button { model.startRecording() } label: {
-                    Image(systemName: "record.circle").frame(width: 20)
-                }
-                .buttonStyle(.field)
-
-            case .recording:
-                Button { model.pauseRecording() } label: {
-                    Image(systemName: "pause.fill").frame(width: 20)
-                }
-                .buttonStyle(.field(active: true))
-
-                stopButton
-
-            case .paused:
-                Button { model.resumeRecording() } label: {
-                    Image(systemName: "play.fill").frame(width: 20)
-                }
-                .buttonStyle(.field(active: true))
-
-                stopButton
+    /// One button, one job at a time: tap toggles running and paused, hold
+    /// saves.
+    ///
+    /// Floating over the map rather than in the control row, because it is
+    /// the only control whose job changes with the state of the app, and a
+    /// row of equal-weight icons is the wrong place for the one thing that is
+    /// never equal weight.
+    ///
+    /// The split is what keeps it to one button. A manual pause deliberately
+    /// never ends itself, so resume has to exist or the forgotten-pause
+    /// recovery can never fire — and here resume is simply tapping again. The
+    /// terminal action gets the deliberate gesture, which is also the right
+    /// weight for it: ending a hike by brushing a button is the mistake worth
+    /// designing against.
+    private var recordControl: some View {
+        VStack(alignment: .trailing, spacing: Field.Space.x2) {
+            // The hold is invisible, as every long press is, so it is spelled
+            // out in the one state where somebody is looking for a way to
+            // finish. The inspect long-press can stay unlabelled because
+            // nothing is lost by never finding it; this one ends the hike.
+            if model.isRecording {
+                Text("HOLD TO SAVE")
+                    .font(.system(size: 9, weight: .medium))
+                    .tracking(0.5)
+                    .foregroundStyle(Field.textDim)
+                    .padding(.horizontal, Field.Space.x2)
+                    .padding(.vertical, 3)
+                    .fieldOverlay(Field.Radius.control)
+                    .transition(.opacity)
             }
+
+            Button {
+                switch model.recorder.state {
+                case .idle, .stopped: Task { await model.startRecording() }
+                case .recording: model.pauseRecording()
+                case .paused: model.resumeRecording()
+                }
+            } label: {
+                Image(systemName: recordGlyph)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(recordGlyphColor)
+                    .frame(width: 60, height: 60)
+            }
+            .background(recordFill, in: .circle)
+            .overlay(Circle().stroke(
+                model.isRecording ? Field.accent : Field.line, lineWidth: 1))
+            .shadow(color: .black.opacity(0.3), radius: 8, y: 2)
+            // Stopping is what saves: it fills elevations from the DEM and
+            // writes the track. Only reachable while there is something to
+            // save, so a hold on an idle button does nothing rather than
+            // something surprising.
+            .onLongPressGesture(minimumDuration: 0.5) {
+                guard model.isRecording else { return }
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                Task { await model.stopRecording() }
+            }
+        }
+        .animation(Field.drawer(), value: model.recorder.state)
+        .padding(.trailing, Field.Space.x4)
+        .padding(.bottom, Field.Space.x4)
+    }
+
+    private var recordGlyphColor: Color {
+        switch model.recorder.state {
+        case .recording: Field.onAccent
+        case .paused: Field.accentText
+        // Red only when it means "this will start recording". Once running,
+        // the accent carries it and a red glyph would read as an alert.
+        case .idle, .stopped: Field.danger
         }
     }
 
-    private var stopButton: some View {
-        Button { Task { await model.stopRecording() } } label: {
-            Image(systemName: "stop.fill").frame(width: 20)
+    /// Paused reads dimmer than running, so a glance tells them apart even
+    /// when the glyph is small.
+    private var recordFill: Color {
+        switch model.recorder.state {
+        case .recording: Field.accent
+        case .paused: Field.accentFill
+        case .idle, .stopped: Field.bg1
         }
-        .buttonStyle(.field)
+    }
+
+    private var recordGlyph: String {
+        switch model.recorder.state {
+        case .idle, .stopped: "record.circle"
+        case .recording: "pause.fill"
+        // Paused shows the way back out of it, which is what a tap does here.
+        case .paused: "play.fill"
+        }
     }
 
     // ---------- formatting ----------
@@ -343,8 +463,6 @@ struct ContentView: View {
 
     private var controls: some View {
         HStack(spacing: Field.Space.x2) {
-            recordingControls
-
             // The map controls stay available while recording — looking at
             // slope or relief mid-hike is the point of having them.
             if !model.isRecording {
@@ -379,6 +497,40 @@ struct ContentView: View {
 
             Spacer()
 
+            // Four controls plus the basemap picker is what the width holds.
+            // Recordings, undo and clear go here rather than overflowing off
+            // the edge; sources stays visible, because provenance is the
+            // product and that was a deliberate call.
+            if !model.isRecording {
+                Menu {
+                    Button {
+                        showTracks = true
+                    } label: {
+                        Label("Recordings (\(model.savedTracks.count))",
+                              systemImage: "list.bullet")
+                    }
+                    .disabled(model.savedTracks.isEmpty)
+
+                    Divider()
+
+                    Button { model.undo() } label: {
+                        Label("Undo", systemImage: "arrow.uturn.backward")
+                    }
+                    .disabled(!model.canUndo)
+
+                    // Clearing is undoable, so it does not stop to ask. A
+                    // confirm dialog on a reversible action just trains
+                    // people to click through the ones that matter.
+                    Button(role: .destructive) { model.clear() } label: {
+                        Label("Clear route", systemImage: "trash")
+                    }
+                    .disabled(model.route.isEmpty)
+                } label: {
+                    Image(systemName: "ellipsis").frame(width: 20)
+                }
+                .buttonStyle(.field)
+            }
+
             // Provenance is the product, not a debug affordance, so it gets
             // a permanent control rather than living in a menu.
             Button { showSources = true } label: {
@@ -387,22 +539,7 @@ struct ContentView: View {
             .buttonStyle(.field(active: model.hasStaleSource))
             .disabled(model.provenance.isEmpty)
 
-            if !model.isRecording {
-                Button { model.undo() } label: {
-                    Image(systemName: "arrow.uturn.backward").frame(width: 20)
-                }
-                .buttonStyle(.field)
-                .disabled(!model.canUndo)
 
-                // Clearing is undoable, so it does not stop to ask. A confirm
-                // dialog on a reversible action just trains people to click
-                // through the ones that matter.
-                Button { model.clear() } label: {
-                    Image(systemName: "trash").frame(width: 20)
-                }
-                .buttonStyle(.field)
-                .disabled(model.route.isEmpty)
-            }
         }
         .padding(.horizontal, Field.Space.x3)
         .padding(.vertical, Field.Space.x3)

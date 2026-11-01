@@ -74,6 +74,7 @@ final class AppModel {
 
     private let location = LocationProvider()
     private let stream = LocationStreamProvider()
+    private let tracks = TrackStore()
 
     // ---------- inspection ----------
     /// The point being inspected, or nil when the card is closed. Held
@@ -93,6 +94,16 @@ final class AppModel {
     /// Filling elevations from the DEM after a recording stops.
     private(set) var isFinishingRecording = false
     private var fixes: Task<Void, Never>?
+    /// Recordings on disk, newest first.
+    private(set) var savedTracks: [TrackSummary] = []
+    /// A recording the app did not finish, found at launch. The user decides
+    /// what happens to it before anything else touches the journal.
+    private(set) var interrupted: Track?
+    /// How much of the track has reached the journal. Appending the delta
+    /// after every event covers splices and recoveries too, which mirroring
+    /// each individual decision would not.
+    private var journaledPoints = 0
+    private var journaledGaps = 0
     private var hasFramedRecording = false
 
     var isRecording: Bool { recorder.state.wantsLocation }
@@ -231,11 +242,45 @@ final class AppModel {
 
     // ---------- recording ----------
 
-    func startRecording() {
+    func startRecording() async {
         guard !isRecording else { return }
         recorder = TrackRecorder()
         recorder.start()
-        hasFramedRecording = false
+        await beginRecording(named: defaultRecordingName)
+    }
+
+    /// Picks up the recording the app was killed during.
+    func continueInterrupted() async {
+        guard let interrupted else { return }
+        recorder.resume(from: interrupted)
+        self.interrupted = nil
+        // The journal is rewritten from the recovered track rather than
+        // appended to: the old one may end mid-line, and a fresh file with
+        // everything replayed into it is simpler than reasoning about where
+        // the damage stopped.
+        await beginRecording(named: recorder.track.name, replaying: recorder.track)
+    }
+
+    /// Saves it as it stands, gap and all.
+    func saveInterrupted() async {
+        guard let interrupted else { return }
+        self.interrupted = nil
+        await finish(interrupted)
+    }
+
+    func discardInterrupted() async {
+        interrupted = nil
+        await tracks.discardJournal()
+    }
+
+    private var defaultRecordingName: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d MMM, HH:mm"
+        return "Hike \(formatter.string(from: Date()))"
+    }
+
+    private func beginRecording(named name: String, replaying track: Track? = nil) async {
+        await beginJournaling(named: name, replaying: track)
 
         // One task for the life of the recording. The stream stays up through
         // a pause on purpose: that is what makes a forgotten pause
@@ -246,7 +291,44 @@ final class AppModel {
                 guard let self else { return }
                 let event = recorder.consider(fix)
                 frameRecordingIfFirst(event)
+                // Every accepted fix reaches the disk before the next one
+                // arrives. A hike held in memory until the user taps stop is
+                // a hike that iOS can take away four hours in.
+                await journalDelta()
             }
+        }
+    }
+
+    private func beginJournaling(named name: String, replaying track: Track? = nil) async {
+        hasFramedRecording = false
+        journaledPoints = 0
+        journaledGaps = 0
+        await tracks.beginJournal(name: name, at: Date())
+        if track != nil { await journalDelta() }
+    }
+
+    /// Appends whatever the track has gained since the last call.
+    ///
+    /// Walks the track rather than reacting to each event, so a recovered
+    /// stretch spliced in all at once lands in the journal the same as a fix
+    /// arriving one at a time.
+    private func journalDelta() async {
+        var seen = 0
+        for (index, segment) in recorder.track.segments.enumerated() {
+            if index > 0, journaledGaps < index,
+               recorder.track.gaps.indices.contains(index - 1) {
+                await tracks.appendBreak(cause: recorder.track.gaps[index - 1].cause)
+                journaledGaps = index
+            }
+
+            let already = max(0, journaledPoints - seen)
+            if already < segment.points.count {
+                for point in segment.points[already...] {
+                    await tracks.appendPoint(point)
+                }
+                journaledPoints += segment.points.count - already
+            }
+            seen += segment.points.count
         }
     }
 
@@ -290,6 +372,14 @@ final class AppModel {
         recorder.discardRecovery()
     }
 
+    func acceptRecoveryAndJournal() async {
+        recorder.acceptRecovery()
+        // The buffered points were never journaled — they were not on the
+        // track. Accepting them makes them real, so they go to disk now
+        // rather than waiting for the next fix.
+        await journalDelta()
+    }
+
     /// Ends the recording and fills in elevations from the DEM.
     ///
     /// GPS altitude is far noisier than GPS position, and summing it produces
@@ -304,11 +394,23 @@ final class AppModel {
         stream.stop()
         recorder.stop()
 
-        guard !recorder.track.isEmpty else { return }
+        guard !recorder.track.isEmpty else {
+            // Started and stopped without a fix. Nothing to keep, and a
+            // journal left behind would be offered back on the next launch.
+            await tracks.discardJournal()
+            return
+        }
+        let finished = await finish(recorder.track)
+        recorder.replaceTrack(with: finished)
+    }
+
+    /// Fills elevations, writes the track, drops the journal.
+    @discardableResult
+    private func finish(_ track: Track) async -> Track {
         isFinishingRecording = true
         defer { isFinishingRecording = false }
 
-        var track = recorder.track
+        var track = track
         for index in track.segments.indices {
             let flat = track.segments[index].coordinates.map(\.flat)
             guard !flat.isEmpty else { continue }
@@ -319,7 +421,35 @@ final class AppModel {
             }
             note(sampled.provenance)
         }
-        recorder.replaceTrack(with: track)
+
+        // Saved after the fill, so what is on disk is what the user saw.
+        await tracks.save(track)
+        await refreshSavedTracks()
+        return track
+    }
+
+    // ---------- saved recordings ----------
+
+    func refreshSavedTracks() async {
+        savedTracks = await tracks.list()
+    }
+
+    /// Looks for a recording the app was killed during. Called once at launch.
+    func findInterruptedRecording() async {
+        guard await tracks.hasUnfinishedRecording else { return }
+        interrupted = await tracks.recoverJournal()
+        // A journal with no points in it has nothing to offer back, and
+        // leaving it would ask the same empty question every launch.
+        if interrupted == nil { await tracks.discardJournal() }
+    }
+
+    func deleteTrack(_ id: UUID) async {
+        await tracks.delete(id)
+        await refreshSavedTracks()
+    }
+
+    func loadTrack(_ id: UUID) async -> Track? {
+        await tracks.load(id)
     }
 
     #if DEBUG
@@ -334,16 +464,16 @@ final class AppModel {
     /// Each fix is judged against its own timestamp rather than the wall
     /// clock, or a simulated twenty-minute walk would be thrown out as stale
     /// before it reached the track.
-    func simulateRecording(forgottenPause: Bool) {
+    func simulateRecording(forgottenPause: Bool) async {
         recorder = TrackRecorder()
         recorder.start()
-        hasFramedRecording = false
+        await beginJournaling(named: "Simulated hike")
 
         var coordinate = Coordinate(longitude: -106.4752, latitude: 39.1875)  // Mt Massive
         var elapsed = 0.0
         let base = Date()
 
-        func feed(_ next: Coordinate, after seconds: Double) {
+        func feed(_ next: Coordinate, after seconds: Double) async {
             elapsed += seconds
             coordinate = next
             let stamp = base.addingTimeInterval(elapsed)
@@ -352,11 +482,12 @@ final class AppModel {
                 now: stamp.addingTimeInterval(1)
             )
             frameRecordingIfFirst(event)
+            await journalDelta()
         }
 
         // Walking.
         for _ in 0..<12 {
-            feed(coordinate.offset(bearingDegrees: 285, distanceM: 45), after: 30)
+            await feed(coordinate.offset(bearingDegrees: 285, distanceM: 45), after: 30)
         }
 
         if forgottenPause {
@@ -364,15 +495,15 @@ final class AppModel {
             // leaves a hole in most trackers and a recovery prompt here.
             recorder.pause()
             for _ in 0..<7 {
-                feed(coordinate.offset(bearingDegrees: 285, distanceM: 48), after: 60)
+                await feed(coordinate.offset(bearingDegrees: 285, distanceM: 48), after: 60)
             }
             _ = recorder.resume()
         } else {
             // Stood still long enough to trip the automatic pause, then
             // walked on, which splices itself back without asking.
-            for _ in 0..<6 { feed(coordinate, after: 30) }
+            for _ in 0..<6 { await feed(coordinate, after: 30) }
             for _ in 0..<6 {
-                feed(coordinate.offset(bearingDegrees: 285, distanceM: 50), after: 30)
+                await feed(coordinate.offset(bearingDegrees: 285, distanceM: 50), after: 30)
             }
         }
     }

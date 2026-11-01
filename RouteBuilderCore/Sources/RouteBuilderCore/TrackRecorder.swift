@@ -166,6 +166,20 @@ public struct TrackRecorder: Sendable {
         pendingRecovery = nil
     }
 
+    /// Picks up a recording the app did not finish — the journal left behind
+    /// when iOS killed the app or the battery went.
+    ///
+    /// The break is marked immediately, so the first fix after this opens a
+    /// new segment with a gap between. That is honest: time passed and the
+    /// user may have walked a mile of it, and the one thing nobody can claim
+    /// is that the line runs straight through the part the phone was off for.
+    public mutating func resume(from recovered: Track) {
+        start()
+        track = recovered
+        track.markBreak(cause: .terminated)
+        awaitingGapResume = true
+    }
+
     /// The user pressing pause. Keeps the location stream up on purpose.
     public mutating func pause() {
         guard state.isRecording else { return }

@@ -313,6 +313,36 @@ struct TrackRecorderTests {
         #expect(recorder.pendingRecovery == nil)
     }
 
+    // ---------- picking up an interrupted recording ----------
+
+    @Test func `resuming a recovered recording opens a gap, not a straight line`() {
+        // What the journal holds after iOS killed the app mid-hike.
+        var interrupted = Track(name: "Mt Massive")
+        var coordinate = trailhead
+        for i in 0..<6 {
+            if i > 0 { coordinate = coordinate.offset(bearingDegrees: 270, distanceM: 40) }
+            interrupted.append(TrackPoint(coordinate: coordinate,
+                                          timestamp: start.addingTimeInterval(Double(i) * 30)))
+        }
+
+        var recorder = TrackRecorder()
+        recorder.resume(from: interrupted)
+        #expect(recorder.state == .recording)
+        #expect(recorder.track.name == "Mt Massive")
+
+        // Relaunched twenty minutes and half a kilometre later. Nobody can
+        // say what happened in between, and the track must not imply it does.
+        let onwards = coordinate.offset(bearingDegrees: 270, distanceM: 500)
+        walk(&recorder, from: onwards, count: 4, startingAt: 1_200)
+
+        #expect(recorder.track.segments.count == 2)
+        #expect(recorder.track.gaps.count == 1)
+        #expect(recorder.track.gaps[0].cause == .terminated)
+        #expect(recorder.track.gaps[0].needsDecision)
+        // Nothing invented: the distance is what was measured either side.
+        #expect(recorder.track.stats.estimatedMiles == 0)
+    }
+
     // ---------- the filter is still in front of everything ----------
 
     @Test func `a bad fix is rejected before it can reach the track`() {

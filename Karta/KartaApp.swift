@@ -15,7 +15,23 @@ struct KartaApp: App {
                     .contains("-showSources")
             )
             .environment(model)
-            .task { await applyLaunchFlags(model) }
+            .task {
+                // Outside applyLaunchFlags on purpose: that function is
+                // #if DEBUG, and looking for a recording the app was killed
+                // during is not a debug affordance — it is the whole point of
+                // journalling. It also has to run before anything else
+                // touches the journal, or starting a new recording would take
+                // the choice away from the user.
+                #if DEBUG
+                let keepJournal = ProcessInfo.processInfo.arguments
+                    .contains("-keepJournal")
+                #else
+                let keepJournal = false
+                #endif
+                if !keepJournal { await model.findInterruptedRecording() }
+                await model.refreshSavedTracks()
+                await applyLaunchFlags(model)
+            }
         }
     }
 }
@@ -41,6 +57,9 @@ struct KartaApp: App {
 ///   -simulateForgottenPause play one paused through, offering a recovery
 ///   -stopRecording   stop the simulated recording, filling elevations
 ///   -dumpRecording   print the recorded track's segments, gaps and stats
+///   -dumpTracks      print the recordings saved on disk
+///   -keepJournal     skip the interrupted-recording check, leaving the journal
+///   -saveInterrupted answer the interrupted-recording prompt with "Save it"
 ///
 /// They exist because the whole chain — BRouter, the elevation providers, the
 /// Terrarium tiles — is otherwise only reachable by tapping the screen, which
@@ -80,9 +99,9 @@ private func applyLaunchFlags(_ model: AppModel) async {
     // Before the dump, and bypassing CoreLocation entirely: the simulator
     // never grants the location permission headlessly.
     if arguments.contains("-simulateRecording") {
-        model.simulateRecording(forgottenPause: false)
+        await model.simulateRecording(forgottenPause: false)
     } else if arguments.contains("-simulateForgottenPause") {
-        model.simulateRecording(forgottenPause: true)
+        await model.simulateRecording(forgottenPause: true)
     }
 
     // Stopping is what fills elevations from the DEM, so gain is zero until
@@ -115,6 +134,25 @@ private func applyLaunchFlags(_ model: AppModel) async {
               + "estimated \(String(format: "%.2f", stats.estimatedMiles)) mi, "
               + "moving \(Int(stats.movingSeconds)) s, elapsed \(Int(stats.elapsedSeconds)) s")
         print("RECORDING: spans \(track.spans.map { $0.isEstimated ? "dashed" : "solid" })")
+    }
+
+    // The prompt's answers are taps, and a script has no finger.
+    if arguments.contains("-saveInterrupted") {
+        await model.saveInterrupted()
+    }
+
+    if arguments.contains("-dumpTracks") {
+        await model.refreshSavedTracks()
+        if let found = model.interrupted {
+            print("INTERRUPTED: \(found.name) | "
+                  + "\(String(format: "%.2f", found.stats.totalMiles)) mi | "
+                  + "\(found.segments.count) segment(s)")
+        }
+        print("TRACKS: \(model.savedTracks.count) saved")
+        for summary in model.savedTracks {
+            print("TRACK: \(summary.name) | \(String(format: "%.2f", summary.miles)) mi | "
+                  + "\(Int(summary.gainFeet)) ft | \(summary.gapCount) gap(s)")
+        }
     }
 
     if arguments.contains("-dumpTrailheads") {
