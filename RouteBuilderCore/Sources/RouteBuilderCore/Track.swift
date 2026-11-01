@@ -233,6 +233,13 @@ public struct Track: Sendable, Codable, Equatable {
     /// would let it drift.
     public var gaps: [TrackGap]
 
+    /// How many points came from a stretch recovered out of a pause.
+    ///
+    /// Provenance rather than arithmetic: those points are measured, so they
+    /// count like any others, but they were sampled coarsely and the sources
+    /// panel should be able to say so.
+    public var recoveredPointCount: Int = 0
+
     public init(name: String = "Recording", segments: [TrackSegment] = [], gaps: [TrackGap] = []) {
         self.name = name
         self.segments = segments

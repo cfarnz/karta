@@ -23,12 +23,20 @@ struct ContentView: View {
                     terrainOverlay: model.terrainOverlay,
                     cursor: model.cursor?.coordinate,
                     preview: model.previewedCandidate?.coordinates,
+                    recordedSpans: model.recordedSpans,
                     fit: model.pendingFit,
                     centerProvider: $mapCenter)
                 .ignoresSafeArea()
 
             VStack(spacing: Field.Space.x2) {
-                statsBar
+                // The recording owns the readout while it runs: its numbers
+                // are the ones being changed, and showing both invites
+                // reading the wrong one.
+                if model.isRecording {
+                    recordingBar
+                } else {
+                    statsBar
+                }
                 if let overlay = model.terrainOverlay {
                     legend(for: overlay)
                 }
@@ -65,6 +73,24 @@ struct ContentView: View {
                 .presentationDetents([.medium])
                 .presentationBackground(Field.bg1)
         }
+        // Asked at resume, which is the moment the answer is known and still
+        // remembered. Not mid-hike on a timer, and not at save time either —
+        // by then there could be three of these to untangle.
+        .alert("Moved while paused",
+               isPresented: Binding(
+                   get: { model.pendingRecovery != nil },
+                   // Dismissing without choosing leaves the gap, which is the
+                   // conservative answer: it adds nothing nobody confirmed.
+                   set: { if !$0 { model.discardRecovery() } }
+               ),
+               presenting: model.pendingRecovery) { stretch in
+            Button("Include it") { model.acceptRecovery() }
+            Button("Leave a gap", role: .cancel) { model.discardRecovery() }
+        } message: { stretch in
+            Text("The recording was paused for \(duration(stretch.durationS)) "
+                 + "and you moved \(distance(stretch.distanceM)). "
+                 + "These points were measured, not estimated.")
+        }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: Field.Space.x2) {
                 // Only once there is a line to plot. An empty chart is a box
@@ -93,6 +119,121 @@ struct ContentView: View {
         // device is set to.
         .preferredColorScheme(.dark)
         .tint(Field.accent)
+    }
+
+    // ---------- recording ----------
+
+    private var recordingBar: some View {
+        HStack(spacing: Field.Space.x4) {
+            VStack(alignment: .leading, spacing: 1) {
+                FieldLabel(recordingLabel)
+                Readout(value: String(format: "%.2f", model.recordingStats.totalMiles),
+                        unit: "mi", size: 20)
+            }
+
+            Divider().frame(height: 26).overlay(Field.line)
+
+            VStack(alignment: .leading, spacing: 1) {
+                FieldLabel("ELAPSED")
+                Readout(value: duration(model.recordingStats.elapsedSeconds),
+                        unit: "", size: 20)
+            }
+
+            Divider().frame(height: 26).overlay(Field.line)
+
+            VStack(alignment: .leading, spacing: 1) {
+                FieldLabel("GAIN")
+                Readout(value: String(format: "%.0f", model.recordingStats.totalGainFeet),
+                        unit: "ft", size: 20)
+            }
+
+            if model.isFinishingRecording {
+                Divider().frame(height: 26).overlay(Field.line)
+                ProgressView().controlSize(.small).tint(Field.accent)
+            }
+        }
+        .padding(.horizontal, Field.Space.x4)
+        .padding(.vertical, Field.Space.x3)
+        .fieldOverlay()
+        .overlay(alignment: .bottomLeading) {
+            // Said out loud rather than inferred from a dimmed number: an
+            // estimate inside a total is exactly the thing that should never
+            // be silent.
+            if model.recordingStats.hasEstimate {
+                Text("includes \(distance(model.recordingStats.estimatedMiles * Units.metersPerMile)) estimated")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Field.textFaint)
+                    .padding(.leading, Field.Space.x4)
+                    .padding(.bottom, 2)
+            }
+        }
+    }
+
+    /// The state, in the place a label would otherwise just say DIST.
+    private var recordingLabel: String {
+        switch model.recorder.state {
+        case .recording: "RECORDING"
+        case .paused(.manual): "PAUSED"
+        // Named differently on purpose: the app did this, not the user, and
+        // somebody staring at a frozen distance deserves to know which.
+        case .paused(.automatic): "AUTO-PAUSED"
+        case .idle, .stopped: "RECORDED"
+        }
+    }
+
+    private var recordingControls: some View {
+        HStack(spacing: Field.Space.x2) {
+            switch model.recorder.state {
+            case .idle, .stopped:
+                Button { model.startRecording() } label: {
+                    Image(systemName: "record.circle").frame(width: 20)
+                }
+                .buttonStyle(.field)
+
+            case .recording:
+                Button { model.pauseRecording() } label: {
+                    Image(systemName: "pause.fill").frame(width: 20)
+                }
+                .buttonStyle(.field(active: true))
+
+                stopButton
+
+            case .paused:
+                Button { model.resumeRecording() } label: {
+                    Image(systemName: "play.fill").frame(width: 20)
+                }
+                .buttonStyle(.field(active: true))
+
+                stopButton
+            }
+        }
+    }
+
+    private var stopButton: some View {
+        Button { Task { await model.stopRecording() } } label: {
+            Image(systemName: "stop.fill").frame(width: 20)
+        }
+        .buttonStyle(.field)
+    }
+
+    // ---------- formatting ----------
+
+    /// Yards under a tenth of a mile, because "0.04 mi" is not a distance
+    /// anybody pictures.
+    private func distance(_ metres: Double) -> String {
+        let miles = metres / Units.metersPerMile
+        if miles < 0.1 {
+            return "\(Int((metres * 1.09361).rounded())) yd"
+        }
+        return String(format: "%.2f mi", miles)
+    }
+
+    private func duration(_ seconds: Double) -> String {
+        let total = Int(seconds.rounded())
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        if hours > 0 { return "\(hours):\(String(format: "%02d", minutes))" }
+        return "\(minutes):\(String(format: "%02d", total % 60))"
     }
 
     // ---------- stats ----------
@@ -157,7 +298,13 @@ struct ContentView: View {
 
     private var controls: some View {
         HStack(spacing: Field.Space.x2) {
-            basemapPicker
+            recordingControls
+
+            // The map controls stay available while recording — looking at
+            // slope or relief mid-hike is the point of having them.
+            if !model.isRecording {
+                basemapPicker
+            }
 
             Menu {
                 Toggle("Hillshade", isOn: Binding(
@@ -175,10 +322,15 @@ struct ContentView: View {
             }
             .buttonStyle(.field(active: terrainActive))
 
-            Button { showDiscover = true } label: {
-                Image(systemName: "sparkle.magnifyingglass").frame(width: 20)
+            // Route editing is inert while recording, so its controls go
+            // rather than sitting there enabled and doing nothing. Terrain
+            // and sources stay: reading the ground mid-hike is the point.
+            if !model.isRecording {
+                Button { showDiscover = true } label: {
+                    Image(systemName: "sparkle.magnifyingglass").frame(width: 20)
+                }
+                .buttonStyle(.field)
             }
-            .buttonStyle(.field)
 
             Spacer()
 
@@ -190,20 +342,22 @@ struct ContentView: View {
             .buttonStyle(.field(active: model.hasStaleSource))
             .disabled(model.provenance.isEmpty)
 
-            Button { model.undo() } label: {
-                Image(systemName: "arrow.uturn.backward").frame(width: 20)
-            }
-            .buttonStyle(.field)
-            .disabled(!model.canUndo)
+            if !model.isRecording {
+                Button { model.undo() } label: {
+                    Image(systemName: "arrow.uturn.backward").frame(width: 20)
+                }
+                .buttonStyle(.field)
+                .disabled(!model.canUndo)
 
-            // Clearing is undoable, so it does not stop to ask. A confirm
-            // dialog on a reversible action just trains people to click
-            // through the ones that matter.
-            Button { model.clear() } label: {
-                Image(systemName: "trash").frame(width: 20)
+                // Clearing is undoable, so it does not stop to ask. A confirm
+                // dialog on a reversible action just trains people to click
+                // through the ones that matter.
+                Button { model.clear() } label: {
+                    Image(systemName: "trash").frame(width: 20)
+                }
+                .buttonStyle(.field)
+                .disabled(model.route.isEmpty)
             }
-            .buttonStyle(.field)
-            .disabled(model.route.isEmpty)
         }
         .padding(.horizontal, Field.Space.x3)
         .padding(.vertical, Field.Space.x3)

@@ -82,13 +82,70 @@
   identical hysteresis per segment. Gain is the number in this app least able
   to afford two copies of its own definition.
 
-Nothing in the app calls any of this yet — there is no recording session, and
-background GPS is still ahead. These are the pieces that session will need,
-and they landed with no project-file changes. Two preventative layers belong
-with the session itself: keeping the GPS running during a pause so a forgotten
-unpause can be recovered rather than estimated, and auto-pausing off the
-filter's own run of stationary rejections so the user is not the one who has
-to remember.
+### The recording session
+
+- **Recording works end to end.** `TrackRecorder` in the core is the state
+  machine — idle, recording, paused, stopped — with the track filter in front
+  of it and a `Track` behind it. `LocationStreamProvider` bridges CoreLocation
+  into an `AsyncStream`, and the app gets a record control, a live readout and
+  a recovery prompt.
+- **A pause stops counting, not the GPS.** Fixes keep arriving into a shadow
+  buffer while paused. So the forgotten unpause — pause at a creek, walk on,
+  remember twenty minutes later — is *recovered* rather than estimated: on
+  resume the app has the actual path and asks whether to include it. Accepting
+  adds measured points to the same segment, so no gap exists at all. Nothing
+  was missing; it was only set aside.
+- The buffer uses the same filter as the live track, not a coarser one. The
+  cost of recording through a pause is the radio, which is already paid the
+  moment the stream stays up; thinning the points saves memory nobody is short
+  of and loses the fidelity that made recovery better than estimating. A
+  coarse 50 m gate measured a 276 m stretch as 184 m — an estimate wearing a
+  measurement's clothes.
+- **The recorder pauses itself** after two minutes without an accepted fix,
+  and resumes itself on movement, splicing the buffered stretch back without
+  asking. Human error mostly disappears when the human is not in the loop, and
+  the recorder paused itself off a guess, so reversing that guess is its own
+  job. A manual pause never ends itself, however far the user walks.
+- The threshold is measured from the last accepted fix rather than counted in
+  fixes, so it behaves the same whether they arrive every second or every half
+  minute.
+- The recovery prompt appears at resume — the moment the answer is known and
+  still remembered — and says the distance measured from the pause point, so
+  the number in the question equals what accepting adds. Dismissing without
+  choosing leaves the gap, which adds nothing nobody confirmed.
+- **CoreLocation's own `pausesLocationUpdatesAutomatically` is off.** It
+  decides for itself that you have stopped and silently stops delivering, with
+  no event saying so — a direct cause of the gap this feature exists to avoid.
+  Karta pauses itself, visibly, off a rule it can explain. Every location in a
+  delivered batch is used, not just the newest: iOS hands over a backlog after
+  a processing gap, and those are real fixes from the stretch that was missed.
+- **Elevations are filled from the DEM when a recording stops**, not taken
+  from GPS altitude. Vertical GPS noise summed over a hike is mostly noise —
+  the vertical version of the problem the track filter solves horizontally.
+  Sampling the recorded line makes a recorded hike's gain comparable with a
+  planned route's, and the sources panel says where it came from.
+- Background location is declared, so a recording survives the screen locking
+  and the phone going in a pocket, which is where a trail app spends most of
+  its life.
+- The recording draws green over the route's orange — a recording is not a
+  plan and the two must not be confused — with bridged gaps dashed, as one
+  source and two layers split by a predicate. The map frames the recording on
+  its first accepted fix, once rather than continuously: a map that follows
+  every fix cannot be panned away from to look at the ridge ahead.
+- Recording takes the map. Taps no longer add waypoints and the route-editing
+  controls are hidden rather than left enabled and inert; terrain and sources
+  stay, because reading the ground mid-hike is the point of having them. Long
+  press still opens the location card.
+- `-simulateRecording`, `-simulateForgottenPause`, `-stopRecording` and
+  `-dumpRecording` drive the whole chain with synthetic fixes. Not a
+  convenience: `simctl privacy grant location` does not take on the iOS 27
+  simulator, so the permission alert blocks every headless run and a real
+  recording cannot be scripted at all.
+
+A recording still lives only in memory: stopping fills its elevations and
+leaves it on screen, but nothing is saved to disk yet and there is no GPX
+export from the UI. Saved tracks want designing alongside saved routes, which
+do not exist either.
 
 ## 0.1.0 — 31 October 2026
 

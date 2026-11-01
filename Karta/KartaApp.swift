@@ -37,6 +37,10 @@ struct KartaApp: App {
 ///   -dumpNames       print the discovered route names to stdout
 ///   -dumpTrailheads  print the trailheads found near Boulder, with names
 ///   -showSources     open the data sources panel
+///   -simulateRecording      play a synthetic hike with an automatic pause
+///   -simulateForgottenPause play one paused through, offering a recovery
+///   -stopRecording   stop the simulated recording, filling elevations
+///   -dumpRecording   print the recorded track's segments, gaps and stats
 ///
 /// They exist because the whole chain — BRouter, the elevation providers, the
 /// Terrarium tiles — is otherwise only reachable by tapping the screen, which
@@ -71,6 +75,46 @@ private func applyLaunchFlags(_ model: AppModel) async {
         // so this goes straight to the model with Boulder as the fallback.
         await model.runDiscover(
             mapCenter: Coordinate(longitude: -105.28, latitude: 39.995))
+    }
+
+    // Before the dump, and bypassing CoreLocation entirely: the simulator
+    // never grants the location permission headlessly.
+    if arguments.contains("-simulateRecording") {
+        model.simulateRecording(forgottenPause: false)
+    } else if arguments.contains("-simulateForgottenPause") {
+        model.simulateRecording(forgottenPause: true)
+    }
+
+    // Stopping is what fills elevations from the DEM, so gain is zero until
+    // this runs — the one part of the chain a screenshot of a live recording
+    // cannot show.
+    if arguments.contains("-stopRecording") {
+        await model.stopRecording()
+    }
+
+    if arguments.contains("-dumpRecording") {
+        let track = model.recorder.track
+        let stats = track.stats
+        print("RECORDING: state \(model.recorder.state)")
+        print("RECORDING: \(track.segments.count) segment(s), \(track.gaps.count) gap(s), "
+              + "\(track.recoveredPointCount) recovered point(s)")
+        for (index, gap) in track.gaps.enumerated() {
+            print("GAP \(index): \(gap.cause.rawValue) | "
+                  + "\(String(format: "%.0f", gap.straightLineM)) m apart | "
+                  + "\(String(format: "%.0f", gap.durationS)) s | "
+                  + "needsDecision \(gap.needsDecision)")
+        }
+        if let pending = model.pendingRecovery {
+            print("RECOVERY: \(String(format: "%.0f", pending.distanceM)) m over "
+                  + "\(String(format: "%.0f", pending.durationS)) s, "
+                  + "\(pending.points.count) points")
+        }
+        print("RECORDING: gain measured \(Int(stats.measuredGainFeet)) ft, "
+              + "estimated \(Int(stats.estimatedGainFeet)) ft")
+        print("RECORDING: measured \(String(format: "%.2f", stats.measuredMiles)) mi, "
+              + "estimated \(String(format: "%.2f", stats.estimatedMiles)) mi, "
+              + "moving \(Int(stats.movingSeconds)) s, elapsed \(Int(stats.elapsedSeconds)) s")
+        print("RECORDING: spans \(track.spans.map { $0.isEstimated ? "dashed" : "solid" })")
     }
 
     if arguments.contains("-dumpTrailheads") {

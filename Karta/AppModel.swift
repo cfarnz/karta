@@ -73,6 +73,7 @@ final class AppModel {
     var pendingFit: [Coordinate]?
 
     private let location = LocationProvider()
+    private let stream = LocationStreamProvider()
 
     // ---------- inspection ----------
     /// The point being inspected, or nil when the card is closed. Held
@@ -81,6 +82,23 @@ final class AppModel {
     private(set) var inspectedPoint: Coordinate?
     private(set) var inspection: LocationSummary?
     private(set) var isInspecting = false
+
+    // ---------- recording ----------
+    /// The session. A value type inside `@Observable`, so mutating it through
+    /// these methods publishes to the UI the same as any other property.
+    private(set) var recorder = TrackRecorder()
+    /// Offered when a manual pause ends having moved. Nil the rest of the
+    /// time, and the UI's only cue to ask.
+    var pendingRecovery: RecoveredStretch? { recorder.pendingRecovery }
+    /// Filling elevations from the DEM after a recording stops.
+    private(set) var isFinishingRecording = false
+    private var fixes: Task<Void, Never>?
+    private var hasFramedRecording = false
+
+    var isRecording: Bool { recorder.state.wantsLocation }
+    var recordingStats: TrackStats { recorder.track.stats }
+    /// Recorded and estimated spans for the map.
+    var recordedSpans: [TrackSpan] { recorder.track.spans }
 
     // ---------- provenance ----------
     private(set) var provenance: [ProvenanceRecord] = []
@@ -126,6 +144,10 @@ final class AppModel {
     }
 
     func addWaypoint(_ coordinate: Coordinate) async {
+        // Recording takes the map. A stray tap landing in a route somebody
+        // forgot was open is a worse outcome than not being able to plan
+        // mid-hike, and the long-press inspection still works.
+        guard !isRecording else { return }
         snapshot()
         await addWaypointWithoutSnapshot(coordinate)
     }
@@ -206,6 +228,155 @@ final class AppModel {
         route.legs[index] = routed.leg
         note(routed.provenance)
     }
+
+    // ---------- recording ----------
+
+    func startRecording() {
+        guard !isRecording else { return }
+        recorder = TrackRecorder()
+        recorder.start()
+        hasFramedRecording = false
+
+        // One task for the life of the recording. The stream stays up through
+        // a pause on purpose: that is what makes a forgotten pause
+        // recoverable rather than a hole to be estimated.
+        let fixes = stream.start()
+        self.fixes = Task { [weak self] in
+            for await fix in fixes {
+                guard let self else { return }
+                let event = recorder.consider(fix)
+                frameRecordingIfFirst(event)
+            }
+        }
+    }
+
+    /// Moves the camera to the recording once, on its first accepted fix.
+    ///
+    /// Once, not continuously: a recording that drags the map on every fix
+    /// cannot be panned away from to look at the ridge ahead, which is a
+    /// thing people do while a recording runs. The first fix is different —
+    /// before it there is nothing on screen to look at, and the map is
+    /// wherever it was left, possibly a different range entirely.
+    private func frameRecordingIfFirst(_ event: RecorderEvent) {
+        guard case .recorded = event,
+              hasFramedRecording == false,
+              let point = recorder.track.firstPoint
+        else { return }
+        hasFramedRecording = true
+        // A pair, because framing takes bounds and one point has none. A few
+        // hundred metres either side puts the start in a readable context
+        // rather than at maximum zoom.
+        pendingFit = [
+            point.coordinate.offset(bearingDegrees: 225, distanceM: 400),
+            point.coordinate.offset(bearingDegrees: 45, distanceM: 400),
+        ]
+    }
+
+    func pauseRecording() {
+        recorder.pause()
+    }
+
+    /// Resuming is where a recovery gets offered, so the answer lands in
+    /// `pendingRecovery` for the UI to ask about rather than being applied.
+    func resumeRecording() {
+        _ = recorder.resume()
+    }
+
+    func acceptRecovery() {
+        recorder.acceptRecovery()
+    }
+
+    func discardRecovery() {
+        recorder.discardRecovery()
+    }
+
+    /// Ends the recording and fills in elevations from the DEM.
+    ///
+    /// GPS altitude is far noisier than GPS position, and summing it produces
+    /// a gain figure that is mostly noise — the vertical version of the
+    /// problem the track filter solves horizontally. Sampling the DEM along
+    /// the recorded line instead makes a recorded hike's gain comparable with
+    /// a planned route's, and the sources panel says where it came from.
+    func stopRecording() async {
+        guard isRecording else { return }
+        fixes?.cancel()
+        fixes = nil
+        stream.stop()
+        recorder.stop()
+
+        guard !recorder.track.isEmpty else { return }
+        isFinishingRecording = true
+        defer { isFinishingRecording = false }
+
+        var track = recorder.track
+        for index in track.segments.indices {
+            let flat = track.segments[index].coordinates.map(\.flat)
+            guard !flat.isEmpty else { continue }
+            let sampled = await elevation.elevations(for: flat)
+            guard sampled.values.count == flat.count else { continue }
+            for (point, value) in zip(track.segments[index].points.indices, sampled.values) {
+                track.segments[index].points[point].coordinate.elevation = value
+            }
+            note(sampled.provenance)
+        }
+        recorder.replaceTrack(with: track)
+    }
+
+    #if DEBUG
+    /// Drives the recorder with synthetic fixes, no CoreLocation involved.
+    ///
+    /// Not a convenience: `simctl privacy grant location` does not take on the
+    /// iOS 27 simulator, so the permission alert blocks every headless run and
+    /// a real recording cannot be exercised by a script at all. Feeding the
+    /// recorder directly is the only way to see the whole chain — filter,
+    /// auto-pause, recovery, spans, stats — without a finger on the screen.
+    ///
+    /// Each fix is judged against its own timestamp rather than the wall
+    /// clock, or a simulated twenty-minute walk would be thrown out as stale
+    /// before it reached the track.
+    func simulateRecording(forgottenPause: Bool) {
+        recorder = TrackRecorder()
+        recorder.start()
+        hasFramedRecording = false
+
+        var coordinate = Coordinate(longitude: -106.4752, latitude: 39.1875)  // Mt Massive
+        var elapsed = 0.0
+        let base = Date()
+
+        func feed(_ next: Coordinate, after seconds: Double) {
+            elapsed += seconds
+            coordinate = next
+            let stamp = base.addingTimeInterval(elapsed)
+            let event = recorder.consider(
+                LocationFix(coordinate: next, horizontalAccuracyM: 6, timestamp: stamp),
+                now: stamp.addingTimeInterval(1)
+            )
+            frameRecordingIfFirst(event)
+        }
+
+        // Walking.
+        for _ in 0..<12 {
+            feed(coordinate.offset(bearingDegrees: 285, distanceM: 45), after: 30)
+        }
+
+        if forgottenPause {
+            // Pressed pause at a creek, then kept walking: the case that
+            // leaves a hole in most trackers and a recovery prompt here.
+            recorder.pause()
+            for _ in 0..<7 {
+                feed(coordinate.offset(bearingDegrees: 285, distanceM: 48), after: 60)
+            }
+            _ = recorder.resume()
+        } else {
+            // Stood still long enough to trip the automatic pause, then
+            // walked on, which splices itself back without asking.
+            for _ in 0..<6 { feed(coordinate, after: 30) }
+            for _ in 0..<6 {
+                feed(coordinate.offset(bearingDegrees: 285, distanceM: 50), after: 30)
+            }
+        }
+    }
+    #endif
 
     // ---------- provenance ----------
 

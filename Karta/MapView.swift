@@ -20,6 +20,9 @@ struct MapView: UIViewRepresentable {
     let cursor: Coordinate?
     /// A discovered candidate drawn faintly before it is committed.
     let preview: [Coordinate]?
+    /// The recording in progress: solid where it was measured, dashed where
+    /// a gap has been bridged.
+    let recordedSpans: [TrackSpan]
     /// Coordinates to frame once, after a Discover search. Cleared by the
     /// coordinator so a later redraw does not yank the camera back.
     let fit: [Coordinate]?
@@ -75,6 +78,7 @@ struct MapView: UIViewRepresentable {
         context.coordinator.terrainOverlay = terrainOverlay
         context.coordinator.cursor = cursor
         context.coordinator.preview = preview
+        context.coordinator.recordedSpans = recordedSpans
         context.coordinator.styleDescriptor = StyleDescriptor(basemap: basemap, hillshade: hillshade)
 
         // Built here so the only reference it keeps to the map is weak. Doing
@@ -102,6 +106,7 @@ struct MapView: UIViewRepresentable {
         context.coordinator.terrainOverlay = terrainOverlay
         context.coordinator.cursor = cursor
         context.coordinator.preview = preview
+        context.coordinator.recordedSpans = recordedSpans
 
         // Compare what the style was built from, not the file URL: the URL is
         // stable across basemap switches because the filename encodes the
@@ -117,6 +122,7 @@ struct MapView: UIViewRepresentable {
         context.coordinator.syncRoute(on: mapView)
         context.coordinator.syncCursor(on: mapView)
         context.coordinator.syncPreview(on: mapView)
+        context.coordinator.syncRecording(on: mapView)
         context.coordinator.overlayController.update(
             mapView: mapView, overlay: terrainOverlay)
         context.coordinator.frameIfNeeded(fit, on: mapView, model: model)
@@ -132,6 +138,7 @@ struct MapView: UIViewRepresentable {
         var terrainOverlay: TerrainOverlay?
         var cursor: Coordinate?
         var preview: [Coordinate]?
+        var recordedSpans: [TrackSpan] = []
         var styleDescriptor = StyleDescriptor(basemap: .openTopo, hillshade: false)
         let overlayController = SlopeOverlayController()
 
@@ -143,6 +150,9 @@ struct MapView: UIViewRepresentable {
         private static let cursorLayerID = "karta-cursor-dot"
         private static let previewSourceID = "karta-preview"
         private static let previewLayerID = "karta-preview-line"
+        private static let recordSourceID = "karta-record"
+        private static let recordLayerID = "karta-record-line"
+        private static let recordEstimateLayerID = "karta-record-estimate"
 
         // ---------- taps ----------
 
@@ -178,11 +188,13 @@ struct MapView: UIViewRepresentable {
         func mapView(_ mapView: MLNMapView, didFinishLoading style: MLNStyle) {
             installHillshade(on: style)
             installRouteLayers(on: style)
+            installRecordingLayers(on: style)
             installPreviewLayer(on: style)
             installCursorLayer(on: style)
             syncRoute(on: mapView)
             syncCursor(on: mapView)
             syncPreview(on: mapView)
+            syncRecording(on: mapView)
             overlayController.styleWasReplaced()
             overlayController.update(mapView: mapView, overlay: terrainOverlay)
         }
@@ -263,6 +275,68 @@ struct MapView: UIViewRepresentable {
             line.lineCap = NSExpression(forConstantValue: "round")
             line.lineJoin = NSExpression(forConstantValue: "round")
             style.addLayer(line)
+        }
+
+        /// The recording in progress.
+        ///
+        /// One source, two layers separated by a predicate on the feature's
+        /// own `estimated` attribute, because the two lines mean different
+        /// things and have to be told apart at a glance: green is where the
+        /// device saw you, dashed is our guess at a bridged gap. Green rather
+        /// than the route's orange so a recording is never mistaken for a
+        /// plan, and installed above the route so the live thing wins the
+        /// overlap.
+        private func installRecordingLayers(on style: MLNStyle) {
+            guard style.source(withIdentifier: Self.recordSourceID) == nil else { return }
+
+            let source = MLNShapeSource(identifier: Self.recordSourceID, shape: nil, options: nil)
+            style.addSource(source)
+
+            let line = MLNLineStyleLayer(identifier: Self.recordLayerID, source: source)
+            line.lineColor = NSExpression(forConstantValue: FieldUI.ok)
+            line.lineWidth = NSExpression(forConstantValue: 4)
+            line.lineCap = NSExpression(forConstantValue: "round")
+            line.lineJoin = NSExpression(forConstantValue: "round")
+            line.predicate = NSPredicate(format: "estimated == NO")
+            style.addLayer(line)
+
+            let estimate = MLNLineStyleLayer(
+                identifier: Self.recordEstimateLayerID, source: source)
+            // Same colour, dashed and thinner: it belongs to the same
+            // recording, and the dash is the whole message.
+            estimate.lineColor = NSExpression(
+                forConstantValue: FieldUI.ok.withAlphaComponent(0.8))
+            estimate.lineWidth = NSExpression(forConstantValue: 3)
+            estimate.lineDashPattern = NSExpression(forConstantValue: [2, 2])
+            estimate.lineCap = NSExpression(forConstantValue: "round")
+            estimate.predicate = NSPredicate(format: "estimated == YES")
+            style.addLayer(estimate)
+        }
+
+        func syncRecording(on mapView: MLNMapView) {
+            guard let style = mapView.style,
+                  let source = style.source(withIdentifier: Self.recordSourceID)
+                    as? MLNShapeSource
+            else { return }
+
+            let features = recordedSpans
+                .filter { $0.coordinates.count >= 2 }
+                .map { span -> MLNPolylineFeature in
+                    let coordinates = span.coordinates.map {
+                        CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+                    }
+                    let feature = MLNPolylineFeature(
+                        coordinates: coordinates, count: UInt(coordinates.count))
+                    // Read by both layers' predicates. A boolean would come
+                    // back from the predicate as a number anyway, so the
+                    // NSNumber is explicit rather than incidental.
+                    feature.attributes = ["estimated": NSNumber(value: span.isEstimated)]
+                    return feature
+                }
+
+            source.shape = features.isEmpty
+                ? nil
+                : MLNShapeCollectionFeature(shapes: features)
         }
 
         /// A discovered candidate, shown before the user commits to it.
