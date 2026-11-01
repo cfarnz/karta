@@ -136,6 +136,12 @@
   controls are hidden rather than left enabled and inert; terrain and sources
   stay, because reading the ground mid-hike is the point of having them. Long
   press still opens the location card.
+- The recovery prompt is hand-built rather than a `.alert`. A system alert
+  presents in its own window, which does not inherit the app's
+  `preferredColorScheme`, so dark-scheme type landed on a light material and
+  the whole thing read as orange and grey on grey — unreadable. It is now a
+  Field surface with Field tokens, which also lets the two numbers that are
+  the entire decision be readouts rather than prose.
 - `-simulateRecording`, `-simulateForgottenPause`, `-stopRecording` and
   `-dumpRecording` drive the whole chain with synthetic fixes. Not a
   convenience: `simctl privacy grant location` does not take on the iOS 27

@@ -42,6 +42,10 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal, Field.Space.x3)
+
+            if let stretch = model.pendingRecovery {
+                recoveryPrompt(stretch)
+            }
         }
         // The inspection card. Driven off the point rather than a separate
         // flag, so there is one thing to clear when it closes.
@@ -72,24 +76,6 @@ struct ContentView: View {
             SourcesSheet(records: model.provenance)
                 .presentationDetents([.medium])
                 .presentationBackground(Field.bg1)
-        }
-        // Asked at resume, which is the moment the answer is known and still
-        // remembered. Not mid-hike on a timer, and not at save time either —
-        // by then there could be three of these to untangle.
-        .alert("Moved while paused",
-               isPresented: Binding(
-                   get: { model.pendingRecovery != nil },
-                   // Dismissing without choosing leaves the gap, which is the
-                   // conservative answer: it adds nothing nobody confirmed.
-                   set: { if !$0 { model.discardRecovery() } }
-               ),
-               presenting: model.pendingRecovery) { stretch in
-            Button("Include it") { model.acceptRecovery() }
-            Button("Leave a gap", role: .cancel) { model.discardRecovery() }
-        } message: { stretch in
-            Text("The recording was paused for \(duration(stretch.durationS)) "
-                 + "and you moved \(distance(stretch.distanceM)). "
-                 + "These points were measured, not estimated.")
         }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: Field.Space.x2) {
@@ -167,6 +153,65 @@ struct ContentView: View {
                     .padding(.bottom, 2)
             }
         }
+    }
+
+    /// Asked at resume, which is the moment the answer is known and still
+    /// remembered. Not mid-hike on a timer, and not at save time either — by
+    /// then there could be three of these to untangle.
+    ///
+    /// Hand-built rather than a `.alert`. A system alert presents in its own
+    /// window, which does not inherit the app's `preferredColorScheme`, so
+    /// dark-scheme type landed on a light material and the whole thing read
+    /// as orange and grey on grey. Everything here is a Field token on a
+    /// Field surface, which also lets the two numbers be readouts rather than
+    /// prose — they are the whole decision.
+    private func recoveryPrompt(_ stretch: RecoveredStretch) -> some View {
+        ZStack {
+            // Tapping away leaves the gap: the conservative answer, because
+            // it adds nothing nobody confirmed.
+            Field.bg0.opacity(0.72)
+                .ignoresSafeArea()
+                .onTapGesture { model.discardRecovery() }
+
+            VStack(alignment: .leading, spacing: Field.Space.x3) {
+                Text("Moved while paused")
+                    .font(.system(size: Field.Size.lg, weight: .semibold))
+                    .foregroundStyle(Field.text)
+
+                HStack(spacing: Field.Space.x4) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        FieldLabel("DISTANCE")
+                        Readout(value: distance(stretch.distanceM), unit: "", size: 20)
+                    }
+                    Divider().frame(height: 26).overlay(Field.line)
+                    VStack(alignment: .leading, spacing: 1) {
+                        FieldLabel("PAUSED FOR")
+                        Readout(value: duration(stretch.durationS), unit: "", size: 20)
+                    }
+                }
+
+                Text("These points were measured, not estimated. Including them "
+                     + "adds them to the track; leaving a gap records that the "
+                     + "stretch is unknown.")
+                    .font(.system(size: Field.Size.sm))
+                    .foregroundStyle(Field.textDim)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: Field.Space.x2) {
+                    Button("Leave a gap") { model.discardRecovery() }
+                        .buttonStyle(.field)
+                    Spacer()
+                    // Prominent because it is the likely answer: the points
+                    // are real, and the user usually did walk that stretch.
+                    Button("Include it") { model.acceptRecovery() }
+                        .buttonStyle(.fieldProminent)
+                }
+            }
+            .padding(Field.Space.x4)
+            .fieldSurface()
+            .padding(.horizontal, Field.Space.x6)
+        }
+        .transition(.opacity)
     }
 
     /// The state, in the place a label would otherwise just say DIST.
