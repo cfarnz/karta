@@ -62,20 +62,11 @@ public struct RouteState: Sendable, Codable, Equatable {
     public static let gainHysteresisM = 3.0
 
     public static func stats(for coordinates: [Coordinate]) -> RouteStats {
-        guard let first = coordinates.first else { return .zero }
+        guard !coordinates.isEmpty else { return .zero }
 
-        var gainM = 0.0
-        var reference = first.elevation ?? 0
-
-        for coordinate in coordinates {
-            let elevation = coordinate.elevation ?? reference
-            if elevation > reference + gainHysteresisM {
-                gainM += elevation - reference
-                reference = elevation
-            } else if elevation < reference - gainHysteresisM {
-                reference = elevation
-            }
-        }
+        // The gain rule itself lives in `gainM(for:)` so a recorded track can
+        // apply it per segment without a second copy of it.
+        let gainM = gainM(for: coordinates)
 
         return RouteStats(
             distanceMiles: coordinates.trackLengthM / Units.metersPerMile,

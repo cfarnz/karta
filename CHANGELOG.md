@@ -37,9 +37,58 @@
   inside a 6 m circle through both filters: the real one records 0 m, the
   passthrough records 758 m of travel that never happened.
 
-Nothing in the app calls the filter yet — there is no recording session, and
-background GPS is still ahead. This is the piece that session will need, and
-it landed with no project-file changes.
+- **Recorded tracks are their own type**, in `RouteBuilderCore/Track.swift`.
+  `RouteState` is sparse waypoints and routed legs, edited freely. A recording
+  is dense, timestamped, append-only while it runs and immutable after,
+  because it is evidence of where somebody was. GPX draws the same line: `trk`
+  for the recorded thing, `rte` for the planned one. A recording is never
+  snapped to OSM geometry — the moments worth recording are exactly the ones
+  snapping erases.
+- **A gap is a value, not a hole.** The recording stops and starts: a
+  forgotten unpause, a drainage with no sky, a killed app. Most trackers answer
+  with a break in the line and a total that is quietly short — and that total
+  is what you later use to guess how long the hike takes. `TrackGap` carries
+  both ends, the cause, and whatever stands in for the missing stretch.
+- The asymmetry that shapes the rest of it: **a gap's duration is exact** —
+  the timestamps either side are real whether or not anyone knows the path —
+  **while its distance can only be estimated**. So moving time and total
+  elapsed are both reported, and elapsed, the number that answers "how long
+  does this take", survives a forgotten pause intact.
+- Measured and estimated distance are kept apart rather than summed into one
+  figure, on gain as well as distance. A bridge can be a straight line (a
+  floor: nobody walks the chord) or a routed path between the ends (the better
+  guess when both ends are on trail), and either way it draws dashed — the
+  same convention already used for a leg with no trail, meaning the same
+  thing: this line is our guess, not the ground.
+- Gain is summed per segment rather than over one stitched list, so the
+  elevation step across a gap is never banked as climb. Reappearing 300 m
+  higher after a signal loss used to be worth 1,000 ft of phantom gain.
+- `looksLikeForgottenPause` and `gapsNeedingDecision` name the case the user
+  can resolve and the app can only infer. The prompt belongs at save time, not
+  mid-hike: stopping to ask interrupts the thing being recorded, and saving is
+  the last moment they still remember what happened.
+- A gap smaller than the track filter's own movement floor is not worth
+  asking about — below that the recorder could not tell motion from noise, so
+  bridging it would add distance nobody walked. The rest still shows up as
+  time.
+- **GPX writes one `trkseg` per unbroken run of recording**, which is what the
+  spec has segments for and how a pause survives into Gaia or COROS instead of
+  being flattened into a line through the gap. Bridged gaps are deliberately
+  not written as track points: an estimate written as a `trkpt` is
+  indistinguishable from measured GPS forever after, in this app and every
+  other one. Track points also carry a UTC `time`; the planned-route export is
+  untouched.
+- The gain rule moved to `RouteState.gainM(for:)` so a track reuses the
+  identical hysteresis per segment. Gain is the number in this app least able
+  to afford two copies of its own definition.
+
+Nothing in the app calls any of this yet — there is no recording session, and
+background GPS is still ahead. These are the pieces that session will need,
+and they landed with no project-file changes. Two preventative layers belong
+with the session itself: keeping the GPS running during a pause so a forgotten
+unpause can be recovered rather than estimated, and auto-pausing off the
+filter's own run of stationary rejections so the user is not the one who has
+to remember.
 
 ## 0.1.0 — 31 October 2026
 
