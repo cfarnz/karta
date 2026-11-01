@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased
+
+### Recording
+
+- **A GPS track filter**, in `RouteBuilderCore/TrackFilter.swift`. A raw
+  CoreLocation stream is not a track: standing still, the estimate wanders
+  inside its own accuracy circle, and a recorder that accepts every fix
+  accumulates miles from a picnic table. Four gates, each with its own
+  rejection reason — accuracy, movement, pace, and age.
+- The movement gate scales with the accuracy of the fix being judged, rather
+  than using one flat threshold. Eighteen metres of apparent movement is real
+  from a 5 m fix and indistinguishable from sitting still inside a 20 m one.
+  A flat threshold banks the second case and creeps the track forward through
+  a lunch stop.
+- The accuracy ceiling is 20 m rather than the 10 m of the HERE sample this
+  borrows its shape from. 10 m is open-sky GPS; under canopy or in a drainage
+  it discards nearly everything and the track simply stops, which reads as a
+  bug rather than a filter.
+- A pace gate rejects fixes that are far enough away but unreachable in the
+  elapsed time. A rejected jump leaves the track end where it was, so the next
+  good fix is measured from the last real position instead of from the bad
+  one. The default suits walking and running; a ski descent needs it raised,
+  and a test says so.
+- The cached fix CoreLocation hands over immediately on start is dropped on
+  age. It can be yesterday's trailhead, and it would draw the first segment
+  across the state.
+- Every rejection carries a reason and is counted. "The GPS is bad" and "you
+  have not moved" look identical on a frozen distance readout and call for
+  opposite responses from the person holding the phone, so the counts belong
+  in the sources panel.
+- `PassthroughTrackFilter` accepts everything, for a debug overlay that draws
+  the raw signal beside the filtered one. The two together are how you tell a
+  filter that is too strict from a GPS having a bad day.
+- 14 tests, 197 green. The headline pair runs the same 200 readings wandering
+  inside a 6 m circle through both filters: the real one records 0 m, the
+  passthrough records 758 m of travel that never happened.
+
+Nothing in the app calls the filter yet — there is no recording session, and
+background GPS is still ahead. This is the piece that session will need, and
+it landed with no project-file changes.
+
 ## 0.1.0 — 31 October 2026
 
 First working build of the native iOS port. The app draws real routes on real
