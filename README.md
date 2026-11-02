@@ -162,6 +162,18 @@ act on.
 
 ## Not built yet
 
-GPX export UI (the serialiser is written and tested), saved routes, the full
-design pass, and the two native-only features that motivated the rewrite:
-offline tile caching and background GPS.
+Saved routes — only recordings persist, so a hike survives everything and a
+route you built survives nothing. Offline tile caching is the last of the
+three native-only features that motivated the rewrite; background GPS and
+working with no signal both landed with recording.
+
+---
+
+## How decisions get made
+
+[docs/constitution.md](docs/constitution.md) is the set of rules this app is
+held to and the reasoning behind each one — why a recording is never snapped
+to a trail, why an estimate is never silent, why nothing ships with an API
+key. Every principle in it was paid for by a decision already made here. It is
+the first thing to read before changing behaviour, and the place to record a
+deliberate departure.

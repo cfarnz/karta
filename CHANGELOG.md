@@ -148,6 +148,20 @@
   simulator, so the permission alert blocks every headless run and a real
   recording cannot be scripted at all.
 
+### Documentation
+
+- **A constitution**, at `docs/constitution.md`: the rules this app is held
+  to, each one traced to a decision already made here rather than to generic
+  good practice. A recording is evidence and a route is a plan; never estimate
+  silently; show the seams; keyless end to end; the field is the deployment
+  target; one definition per number; verify in the real app; prove a port
+  against the thing that shipped. It also records the deliberate debts — the
+  one-sided gain hysteresis, no 3D terrain, DEM-derived approximations — so
+  nobody rediscovers them and quietly changes behaviour.
+- The README's "not built yet" was stale: recording, background GPS and the
+  design pass have all shipped. Saved routes and offline tiles are what is
+  actually left.
+
 ### Saved recordings
 
 - **Recordings survive the app dying.** The requirement was never "save the
