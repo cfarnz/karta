@@ -341,6 +341,33 @@ public struct TrackRecorder: Sendable {
         return timestamp.timeIntervalSince(last) >= autoPauseAfterS
     }
 
+    /// Stats for a session still in progress.
+    ///
+    /// `track.stats.elapsedSeconds` spans the committed points, so it stops
+    /// advancing the moment a pause begins: the readout froze at 5:30 while
+    /// the prompt beside it offered to recover a 7:00 stretch, which reads as
+    /// a contradiction. The pause always ends up inside elapsed either way —
+    /// accepting splices the buffered points in with their real timestamps,
+    /// and discarding opens a gap the next fix spans — so counting it live is
+    /// the same number arriving sooner.
+    ///
+    /// Idle sessions report the committed stats untouched, which is what a
+    /// finished track should read.
+    public func liveStats(now: Date = Date()) -> TrackStats {
+        var stats = track.stats
+        // Only a live session counts forward. `.stopped` matters as much as
+        // `.idle` here: a finished recording that kept reading the wall clock
+        // would grow for as long as the app stayed open.
+        switch state {
+        case .idle, .stopped: return stats
+        case .recording, .paused: break
+        }
+        guard let first = track.firstPoint else { return stats }
+        stats.elapsedSeconds = max(stats.elapsedSeconds,
+                                   now.timeIntervalSince(first.timestamp))
+        return stats
+    }
+
     private mutating func beginPause(_ kind: PauseKind) {
         state = .paused(kind)
         pausedAt = track.lastPoint

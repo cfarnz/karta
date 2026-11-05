@@ -42,6 +42,40 @@ private func walk(
 @Suite("The recording session")
 struct TrackRecorderTests {
 
+    @Test func `elapsed keeps counting through a pause the user is still in`() {
+        var recorder = TrackRecorder()
+        recorder.start()
+        let walked = walk(&recorder, from: trailhead, count: 12, startingAt: 0)
+        #expect(recorder.track.stats.elapsedSeconds == 330)
+
+        recorder.pause()
+        let strolled = walk(&recorder, from: walked.last, count: 15,
+                            startingAt: walked.lastTime)
+        let pausedUntil = start.addingTimeInterval(strolled.lastTime)
+
+        // The committed track still ends where the pause began...
+        #expect(recorder.track.stats.elapsedSeconds == 330)
+        // ...but what the readout shows must include the pause being lived
+        // through, or it contradicts the recovery prompt beside it.
+        #expect(recorder.liveStats(now: pausedUntil).elapsedSeconds == 750)
+
+        // And the live number is the one the resolved track lands on anyway.
+        guard case .recoveryAvailable = recorder.resume() else {
+            Issue.record("expected a recovery to be offered"); return
+        }
+        recorder.acceptRecovery()
+        #expect(recorder.track.stats.elapsedSeconds == 750)
+    }
+
+    @Test func `a finished session reports the committed span, not the wall clock`() {
+        var recorder = TrackRecorder()
+        recorder.start()
+        walk(&recorder, from: trailhead, count: 12, startingAt: 0)
+        recorder.stop()
+        let longAfter = start.addingTimeInterval(99_999)
+        #expect(recorder.liveStats(now: longAfter).elapsedSeconds == 330)
+    }
+
     @Test func `a plain walk records every fix and opens no gaps`() {
         var recorder = TrackRecorder()
         recorder.start()

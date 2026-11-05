@@ -107,7 +107,7 @@ final class AppModel {
     private var hasFramedRecording = false
 
     var isRecording: Bool { recorder.state.wantsLocation }
-    var recordingStats: TrackStats { recorder.track.stats }
+    var recordingStats: TrackStats { recorder.liveStats() }
     /// A saved recording opened from the list, or nil.
     private(set) var viewedTrack: Track?
     /// Which one, so deleting the open recording can close it.
