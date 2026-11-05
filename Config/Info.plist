@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Background Modes cannot be expressed as an INFOPLIST_KEY_ build setting;
+	     Xcode drops INFOPLIST_KEY_UIBackgroundModes silently. Without this key
+	     allowsBackgroundLocationUpdates = true throws on a real device, so
+	     recording crashed on device while working fine in the simulator.
+	     GENERATE_INFOPLIST_FILE stays YES and merges the rest on top of this. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
+</dict>
+</plist>
