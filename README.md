@@ -71,7 +71,7 @@ derived arithmetic proves the Swift is self-consistent; agreeing with the
 shipping web app proves nobody's mileage, gain, slope angle or AQI band
 changed.
 
-**183 tests in 31 suites.**
+**252 tests in 35 suites.**
 
 ---
 
