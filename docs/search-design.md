@@ -1,4 +1,4 @@
-# Place search for Discover — design note
+# Place search for Discover: design note
 
 Status: **not built.** Written 31 October 2026 after testing the providers
 live. Nothing here is committed to; it exists so the work can start without
@@ -35,7 +35,7 @@ Tested live on 31 October:
 | --- | --- |
 | **Photon** (komoot, OSM) | Best fit. Keyless, built for type-ahead, supports proximity bias and tag filters. |
 | Nominatim (OSM) | Works, but ranked *Brainard Lake, Alberta* above the Colorado one, and its usage policy effectively forbids per-keystroke queries. |
-| Apple `MKLocalSearch` | Best ranking and free, but Apple's Maps terms restrict using MapKit-derived data alongside a non-Apple map, and this app renders with MapLibre. **Unverified — read the actual clause before choosing this.** |
+| Apple `MKLocalSearch` | Best ranking and free, but Apple's Maps terms restrict using MapKit-derived data alongside a non-Apple map, and this app renders with MapLibre. **Unverified. Read the actual clause before choosing this.** |
 
 Photon is also the consistent choice: trailheads already come from OSM via
 Overpass, so search and data would agree about what exists.
@@ -79,7 +79,7 @@ matters.
 
 ## Rough shape
 
-1. `PlaceSearch` in `RouteBuilderCore` — query building, tag filters, result
+1. `PlaceSearch` in `RouteBuilderCore`: query building, tag filters, result
    ranking and decoding, behind the existing `HTTPFetching` seam so it is
    testable offline. Ground truth from the live queries above.
 2. A search field in the Discover sheet, debounced, writing the chosen place

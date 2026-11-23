@@ -6,8 +6,8 @@ trails, read the ground under any point, and find loops near you.
 Karta is a native SwiftUI rewrite of [route-builder][web], a vanilla
 JavaScript web app. The rewrite exists for three things the web could not do:
 offline map tiles, background GPS, and working with no signal. Everything else
-— the route math, the dual elevation providers, the cache, GPX — ports across
-or improves.
+ports across or improves: the route math, the dual elevation providers, the
+cache, GPX.
 
 [web]: https://cfarnz.github.io/route-builder
 
@@ -23,7 +23,7 @@ falls back to a straight line and says so. Markers drag, legs rebuild, and the
 distance and climbing update live.
 
 **Read the terrain.** Slope and aspect overlays are computed on device from
-[Terrarium][terrarium] DEM tiles — no slope tile service exists to point at.
+[Terrarium][terrarium] DEM tiles, because no slope tile service exists to point at.
 Shaded relief comes from MapLibre's hillshade layer using Igor's method, which
 is the one that tries not to bury the contour lines underneath it.
 
@@ -33,7 +33,7 @@ all track your finger.
 
 **Inspect any point.** Long-press to get elevation, slope and aspect, current
 weather and a three-day forecast, US AQI with a smoke trend, active NWS alerts,
-and the CAIC avalanche zone — five providers in parallel, each failure
+and the CAIC avalanche zone. Five providers run in parallel, each failure
 degrading to an omitted section rather than a failed card.
 
 **Find something to do.** Discover generates candidate loops from trailheads
@@ -49,7 +49,7 @@ builder as an editable route.
 ## Architecture
 
 ```
-RouteBuilderCore/   a dependency-free Swift package — all the logic
+RouteBuilderCore/   a dependency-free Swift package, all the logic
 Karta/              a thin SwiftUI + MapLibre shell on top
 ```
 
@@ -60,7 +60,7 @@ testable offline with canned responses. The suite runs under `swift test` on
 macOS in about 15 ms with no simulator boot.
 
 That split is the main structural improvement over the web app, where the logic
-and the `fetch` calls were the same lines — which is why none of its provider
+and the `fetch` calls were the same lines, which is why none of its provider
 behaviour was ever covered by a test.
 
 ### How the port was validated
@@ -78,14 +78,14 @@ changed.
 ## Data sources
 
 Every source is keyless and public. Karta ships no secrets and needs no
-backend, which is a deliberate constraint — it is why there is nothing to
+backend, which is a deliberate constraint. It is why there is nothing to
 operate and nothing to rotate.
 
 | What | Source |
 |---|---|
 | Basemaps | OpenTopoMap, USGS The National Map |
-| Elevation (fine) | USGS 3DEP EPQS — 1 m, US only |
-| Elevation (coarse) | Open-Meteo — 90 m, worldwide fallback |
+| Elevation (fine) | USGS 3DEP EPQS: 1 m, US only |
+| Elevation (coarse) | Open-Meteo: 90 m, worldwide fallback |
 | DEM tiles | AWS Terrain Tiles (Terrarium encoding) |
 | Routing | BRouter, `hiking-mountain` profile |
 | Trailheads | OpenStreetMap via Overpass |
@@ -96,7 +96,7 @@ operate and nothing to rotate.
 Responses are cached on disk with per-source TTLs, from 15 minutes for alerts
 to a year for elevation, since terrain does not move. A fetch that fails with
 something already cached returns the stale value and says how old it is, rather
-than failing — the behaviour that matters most on a ridge with one bar.
+than failing. That is the behaviour that matters most on a ridge with one bar.
 
 ---
 
@@ -140,7 +140,7 @@ screenshot cannot do. Each flag is independent.
 
 **No 3D terrain.** MapLibre Native iOS has no `MLNTerrain` and no `setTerrain`
 in any of its headers; the MapLibre project lists Terrain3D as an unshipped
-roadmap item still seeking co-funding. Hillshade is the honest substitute — no
+roadmap item still seeking co-funding. Hillshade is the honest substitute. There is no
 tilt, but the relief reads.
 
 **Elevation gain is noisy on flat ground.** Gain uses a 3 m hysteresis to
@@ -162,7 +162,7 @@ act on.
 
 ## Not built yet
 
-Saved routes — only recordings persist, so a hike survives everything and a
+Saved routes: only recordings persist, so a hike survives everything and a
 route you built survives nothing. Offline tile caching is the last of the
 three native-only features that motivated the rewrite; background GPS and
 working with no signal both landed with recording.
@@ -172,7 +172,7 @@ working with no signal both landed with recording.
 ## How decisions get made
 
 [docs/constitution.md](docs/constitution.md) is the set of rules this app is
-held to and the reasoning behind each one — why a recording is never snapped
+held to and the reasoning behind each one: why a recording is never snapped
 to a trail, why an estimate is never silent, why nothing ships with an API
 key. Every principle in it was paid for by a decision already made here. It is
 the first thing to read before changing behaviour, and the place to record a

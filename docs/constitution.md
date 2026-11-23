@@ -2,14 +2,14 @@
 
 The rules this app is held to, and why each one exists.
 
-Every principle here was paid for — it comes from a decision already made in
+Every principle here was paid for. It comes from a decision already made in
 this codebase, usually after getting it wrong once. None of them are generic
 good practice. They are the specific commitments that make Karta this app
 rather than a different one, and they are written down so a change can be
 checked against them instead of against somebody's memory of a conversation.
 
 When a change conflicts with a principle, the principle does not
-automatically win — but the conflict has to be deliberate, argued, and
+automatically win, but the conflict has to be deliberate, argued, and
 recorded in the changelog. Silent drift is the thing this document exists to
 prevent.
 
@@ -38,14 +38,14 @@ untouched.
 ## II. Never estimate silently.
 
 Where a number is not measured, the app says so, in the number's own
-neighbourhood — not in a footnote, a tooltip, or a help page.
+neighbourhood, never in a footnote, a tooltip, or a help page.
 
 - Measured and estimated distance are separate fields, on gain as well as
   distance. They are summed for display, never in storage.
 - An estimated line is drawn dashed. The same convention covers a leg with no
   trail and a bridged gap, because it means the same thing in both: this line
   is our guess, not the ground.
-- A total that is unreliable says *which way* — unbridged gaps read low, a
+- A total that is unreliable says *which way*: unbridged gaps read low, a
   bridge means part of the figure is estimated.
 - An estimate is never written into an export where it would become
   indistinguishable from measurement. Bridged gaps are not written as GPX
@@ -53,7 +53,7 @@ neighbourhood — not in a footnote, a tooltip, or a help page.
   real fixes again.
 
 The corollary: a gap in the data is a value, not an absence. It carries both
-ends, a cause, and a duration — which is knowable exactly even when the
+ends, a cause, and a duration, which is knowable exactly even when the
 distance never will be.
 
 ---
@@ -78,7 +78,7 @@ this app *is*, not a convenience.
 
 Every data source is open: OSM via Overpass, BRouter, USGS 3DEP, Open-Meteo,
 Terrarium tiles, CAIC. This is why the Apify trailhead scraper was rejected
-even though it would have worked — and the names turned out to be in OSM
+even though it would have worked, and the names turned out to be in OSM
 already, beside the nodes rather than on them.
 
 ---
@@ -139,7 +139,7 @@ real recording cannot be scripted at all, and a screenshot cannot tap, drag,
 long-press, or answer a prompt. Without flags, whole subsystems would be
 unverifiable.
 
-Proof is a screenshot or console output, read before commit — and read
+Proof is a screenshot or console output, read before commit and read
 sceptically. A downscaled screenshot is not evidence; sample the pixels when
 something looks wrong.
 
@@ -162,7 +162,7 @@ number people have been reading for a year is a worse bug than the bug.
 ## X. The chrome is a field instrument.
 
 Dark, warm, quiet, dense with real numbers. Follows the Field Instrument
-token system in `Karta/DesignSystem.swift` — nothing hardcodes a colour,
+token system in `Karta/DesignSystem.swift`. Nothing hardcodes a colour,
 duration or spacing that exists as a token.
 
 - **Dark chrome over a deliberately light topo basemap, regardless of the
@@ -187,7 +187,7 @@ Long-press inspects the ground rather than arming an inspect mode. Tap selects
 a Discover candidate rather than hovering it, because touch has no hover.
 
 The exception is a gesture that *ends* something, which earns the deliberate
-action and a visible label — holding the record button saves the hike, and the
+action and a visible label. Holding the record button saves the hike, and the
 button says so while recording. A long press with no affordance is acceptable
 only when nothing is lost by never finding it.
 
@@ -196,12 +196,12 @@ only when nothing is lost by never finding it.
 ## XII. Ask at the moment the answer is known.
 
 A question asked too late is a question nobody can answer. The recovery prompt
-appears on resume, while the user still remembers walking that stretch — not at
+appears on resume, while the user still remembers walking that stretch, never at
 save time, when there could be three of them to untangle, and not mid-hike,
 which interrupts the thing being recorded.
 
 Destructive and irreversible actions ask first; reversible ones do not. Clearing
-a route is undoable, so it does not stop to confirm — a dialog on a reversible
+a route is undoable, so it does not stop to confirm. A dialog on a reversible
 action only trains people to click through the ones that matter. Deleting a
 recording has no undo behind it, so it asks.
 
@@ -213,12 +213,12 @@ that adds nothing nobody confirmed.
 ## XIII. Read the headers before believing a thread.
 
 Twice now, "MapLibre Native cannot do that" has been true in the letter and
-wrong in the outcome — a different API did the job. The slope overlay ships
+wrong in the outcome, because a different API did the job. The slope overlay ships
 because `MLNImageSource` was sitting in the framework headers while a GitHub
 thread said there was no raster equivalent.
 
 `grep` the `.framework/Headers` directory before declaring anything blocked.
-Genuine dead ends exist — 3D terrain is one — but they are rarer than the
+Genuine dead ends exist, and 3D terrain is one, but they are rarer than the
 internet suggests.
 
 ---
